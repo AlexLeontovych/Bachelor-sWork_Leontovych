@@ -1,0 +1,3 @@
+/* CSS Editor uses Monaco Editor, modal styles are shared with JSEditor */
+/* Import shared editor modal styles */
+@import '../JSEditor/JSEditor.css';

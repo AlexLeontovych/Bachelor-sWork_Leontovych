@@ -1,0 +1,29 @@
+.studio-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #252525;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.studio-title {
+  font-size: 14px;
+  color: #e5e7eb;
+  font-weight: 500;
+}
+
+.studio-back-button {
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.5);
+  color: #e5e7eb;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.studio-back-button:hover {
+  background: rgba(37, 99, 235, 0.25);
+}
+
