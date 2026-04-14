@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:deploy": "vite build && powershell -Command \"Copy-Item -Path 'dist\\*' -Destination '.' -Recurse -Force\"",
+    "build:deploy": "vite build --emptyOutDir --outDir docs",
     "preview": "vite preview"
   },
   "dependencies": {

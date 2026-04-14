@@ -7,8 +7,9 @@
 node_modules/
 
 # Build output
-# dist/ - закомічено для GitHub Pages
+dist/
 build/
+docs/
 
 # Logs
 *.log
