@@ -1,0 +1,311 @@
+.project-workflow-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 16px 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
+.project-workflow-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.project-workflow-state-chips,
+.project-workflow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.project-workflow-state-chips {
+  flex: 1 1 260px;
+}
+
+.project-workflow-stages {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid rgba(144, 164, 208, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.project-workflow-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.project-workflow-stage-pill.active {
+  background: rgba(108, 158, 255, 0.16);
+  border: 1px solid rgba(108, 158, 255, 0.2);
+  color: #dce8ff;
+}
+
+.project-workflow-actions {
+  margin-left: auto;
+}
+
+.project-workflow-note-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.project-workflow-note {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(144, 164, 208, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.project-workflow-note-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.project-workflow-note-text {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.project-workflow-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.project-workflow-button:disabled {
+  opacity: 0.45;
+}
+
+.project-workflow-button.primary {
+  background: linear-gradient(180deg, rgba(108, 158, 255, 0.92), rgba(92, 136, 245, 0.94));
+  border-color: rgba(108, 158, 255, 0.26);
+  color: var(--text-on-accent);
+  box-shadow: 0 12px 22px rgba(92, 136, 245, 0.16);
+}
+
+.project-workflow-button.success {
+  background: rgba(46, 204, 113, 0.12);
+  border-color: rgba(46, 204, 113, 0.2);
+  color: #d7fcdc;
+}
+
+.project-workflow-button.warning {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.22);
+  color: #fde9aa;
+}
+
+.project-workflow-button.secondary {
+  background: rgba(108, 158, 255, 0.1);
+  border-color: rgba(108, 158, 255, 0.18);
+  color: #dce8ff;
+}
+
+.project-workflow-button.subtle,
+.project-workflow-button.ghost {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(144, 164, 208, 0.12);
+  color: var(--text-secondary);
+}
+
+.project-workflow-dialog {
+  width: min(100%, 560px);
+  padding: 0;
+  border-radius: 18px;
+}
+
+.project-workflow-dialog-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 18px 20px 16px;
+}
+
+.project-workflow-dialog-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(144, 164, 208, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.project-workflow-dialog-icon.primary {
+  color: #dce8ff;
+  background: rgba(108, 158, 255, 0.12);
+  border-color: rgba(108, 158, 255, 0.22);
+}
+
+.project-workflow-dialog-icon.warning {
+  color: #fde9aa;
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.2);
+}
+
+.project-workflow-dialog-icon.success {
+  color: #d7fcdc;
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.2);
+}
+
+.project-workflow-dialog-header-copy {
+  min-width: 0;
+}
+
+.project-workflow-dialog-kicker {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.project-workflow-dialog-header h3 {
+  margin: 6px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.55rem, 1.8vw, 1.9rem);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
+.project-workflow-dialog-description {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.project-workflow-dialog-body {
+  padding: 16px 20px 0;
+  border-top: 1px solid rgba(144, 164, 208, 0.08);
+}
+
+.project-workflow-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.project-workflow-field:last-child {
+  margin-bottom: 0;
+}
+
+.project-workflow-field-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.project-workflow-select,
+.project-workflow-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(144, 164, 208, 0.14);
+  border-radius: 14px;
+  background: rgba(12, 17, 29, 0.84);
+  color: var(--text-primary);
+}
+
+.project-workflow-select:focus,
+.project-workflow-textarea:focus {
+  outline: none;
+  border-color: rgba(108, 158, 255, 0.42);
+  box-shadow: 0 0 0 4px rgba(108, 158, 255, 0.12);
+}
+
+.project-workflow-textarea {
+  min-height: 104px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.project-workflow-validation {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.project-workflow-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px 20px;
+  border-top: 1px solid rgba(144, 164, 208, 0.08);
+}
+
+@media (max-width: 1100px) {
+  .project-workflow-note-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .project-workflow-bar {
+    margin: 0 14px 12px;
+  }
+
+  .project-workflow-actions {
+    margin-left: 0;
+  }
+
+  .project-workflow-dialog-header {
+    grid-template-columns: auto 1fr;
+  }
+
+  .project-workflow-dialog-close {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .project-workflow-dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .project-workflow-dialog-actions .project-workflow-button {
+    width: 100%;
+  }
+}

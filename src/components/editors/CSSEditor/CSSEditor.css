@@ -1,3 +1,213 @@
 /* CSS Editor uses Monaco Editor, modal styles are shared with JSEditor */
 /* Import shared editor modal styles */
 @import '../JSEditor/JSEditor.css';
+
+.css-editor-modal {
+  width: min(100%, 1180px);
+}
+
+.css-editor-content {
+  padding-top: 16px;
+}
+
+.css-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 14px;
+}
+
+.css-editor-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.css-editor-section {
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(144, 164, 208, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.css-editor-section-heading,
+.css-editor-sidebar-label {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.css-token-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.css-token-card {
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(144, 164, 208, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.css-token-swatch {
+  height: 56px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.css-token-card strong,
+.css-token-card span {
+  display: block;
+}
+
+.css-token-card strong {
+  margin-top: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.css-token-card span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.css-typography-ramp {
+  margin-top: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(144, 164, 208, 0.08);
+  overflow: hidden;
+}
+
+.css-typography-row {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(144, 164, 208, 0.08);
+}
+
+.css-typography-row:last-child {
+  border-bottom: none;
+}
+
+.css-typography-meta span,
+.css-typography-meta small {
+  display: block;
+}
+
+.css-typography-meta span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.css-typography-meta small {
+  margin-top: 4px;
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+
+.css-typography-sample {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: clamp(0.95rem, 1.6vw, 1.7rem);
+  line-height: 1.06;
+  letter-spacing: -0.04em;
+}
+
+.editor-modal-workspace.css-editor-workspace {
+  margin-top: 10px;
+  min-height: 280px;
+}
+
+.editor-modal-workspace.css-editor-workspace > div {
+  min-height: 280px;
+}
+
+.editor-modal-workspace.css-editor-workspace .monaco-editor {
+  border-radius: 16px;
+}
+
+.css-editor-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.css-editor-rule-preview,
+.css-editor-sidebar-nav {
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(144, 164, 208, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.css-editor-rule-card {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(5, 9, 19, 0.72);
+  color: #dce8ff;
+}
+
+.css-editor-rule-card svg {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+
+.css-editor-rule-card pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.css-editor-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.css-editor-sidebar-nav span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.css-editor-footnote {
+  padding: 10px 30px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 980px) {
+  .css-editor-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .css-token-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .css-typography-row {
+    grid-template-columns: 1fr;
+  }
+
+  .css-editor-footnote {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}

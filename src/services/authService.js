@@ -22,6 +22,39 @@ const logError = (message, error) => {
   })
 }
 
+const readNonEmptyString = (value) => {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const normalizedValue = value.trim()
+  return normalizedValue.length > 0 ? normalizedValue : null
+}
+
+const getEmailRedirectTo = () => {
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+
+  return `${window.location.origin}${window.location.pathname || '/'}`
+}
+
+const buildFallbackProfile = (user) => {
+  const metadata = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
+
+  return {
+    id: user?.id || null,
+    email: user?.email || null,
+    full_name:
+      readNonEmptyString(metadata.full_name) ||
+      readNonEmptyString(metadata.fullName) ||
+      readNonEmptyString(metadata.name),
+    role: 'user',
+    team_role: 'developer',
+    banned: false
+  }
+}
+
 // Отримати поточного користувача
 export const getCurrentUser = async () => {
   const startTime = performance.now()
@@ -68,7 +101,7 @@ export const isAdmin = async () => {
       .from('profiles')
       .select('role')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
     
     const profileDuration = (performance.now() - profileStartTime).toFixed(2)
     const totalDuration = (performance.now() - startTime).toFixed(2)
@@ -117,7 +150,7 @@ export const getCurrentProfile = async () => {
       .from('profiles')
       .select('*')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
     
     const duration = (performance.now() - startTime).toFixed(2)
 
@@ -125,7 +158,16 @@ export const getCurrentProfile = async () => {
       logError(`getCurrentProfile: Помилка (${duration}ms)`, error)
       throw error
     }
-    
+
+    if (!data) {
+      const fallbackProfile = buildFallbackProfile(user)
+      logWithTime(`getCurrentProfile: Профіль відсутній, використовуємо fallback (${duration}ms)`, {
+        userId: user.id,
+        email: user.email
+      })
+      return fallbackProfile
+    }
+
     logWithTime(`getCurrentProfile: Успішно (${duration}ms)`, {
       userId: data?.id,
       hasData: !!data
@@ -149,8 +191,9 @@ export const signUp = async (email, password, fullName = null) => {
       email,
       password,
       options: {
+        emailRedirectTo: getEmailRedirectTo(),
         data: {
-          full_name: fullName
+          full_name: fullName || null
         }
       }
     })
@@ -161,12 +204,29 @@ export const signUp = async (email, password, fullName = null) => {
       logError(`signUp: Помилка реєстрації (${signUpDuration}ms, загалом ${totalDuration}ms)`, error)
       throw error
     }
-    
+
+    if (!data?.user?.id) {
+      throw new Error('Supabase Auth did not return the created user identifier.')
+    }
+
+    if (data.session) {
+      logWithTime('signUp: Supabase returned a session immediately. Check that email confirmations are enabled.', {
+        userId: data.user.id,
+        email: data.user.email
+      })
+    }
+
     logWithTime(`signUp: Реєстрація успішна (${signUpDuration}ms, загалом ${totalDuration}ms)`, {
-      userId: data?.user?.id,
-      email: data?.user?.email
+      userId: data.user.id,
+      email: data.user.email,
+      requiresEmailConfirmation: !data.session
     })
-    return data
+
+    return {
+      userId: data.user.id,
+      email: data.user.email ?? email,
+      requiresEmailConfirmation: !data.session
+    }
   } catch (error) {
     const duration = (performance.now() - startTime).toFixed(2)
     logError(`signUp: Критична помилка (${duration}ms)`, error)
@@ -209,7 +269,7 @@ export const signIn = async (email, password) => {
           .from('profiles')
           .select('banned')
           .eq('id', data.user.id)
-          .single(),
+          .maybeSingle(),
         new Promise((resolve) => 
           setTimeout(() => {
             logWithTime('signIn: Таймаут перевірки профілю (3 секунди)')
@@ -333,7 +393,7 @@ export const getSession = async () => {
           .from('profiles')
           .select('banned')
           .eq('id', session.user.id)
-          .single()
+          .maybeSingle()
         
         const banCheckDuration = (performance.now() - banCheckStartTime).toFixed(2)
         const totalDuration = (performance.now() - startTime).toFixed(2)

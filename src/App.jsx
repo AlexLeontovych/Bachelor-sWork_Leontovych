@@ -1,36 +1,145 @@
 import { useState, useRef, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { gsap } from 'gsap'
-import './styles.css'
+import { AlertTriangle, Image as ImageIcon, Type, X } from 'lucide-react'
 import ProjectModal from './components/project/ProjectModal/ProjectModal'
 import ProjectsList from './components/project/ProjectsList/ProjectsList'
 import MenuBar from './components/studio/MenuBar/MenuBar'
-import Header from './components/studio/Header/Header'
 import InspectorPanel from './components/studio/InspectorPanel/InspectorPanel'
 import Canvas from './components/studio/Canvas/Canvas'
 import DocumentPanel from './components/studio/DocumentPanel/DocumentPanel'
+import UnsavedChangesModal from './components/studio/UnsavedChangesModal/UnsavedChangesModal'
 import JSEditor from './components/editors/JSEditor/JSEditor'
 import CSSEditor from './components/editors/CSSEditor/CSSEditor'
 import LayersWindow from './components/layers/LayersWindow/LayersWindow'
 import AuthForm from './components/auth/AuthForm/AuthForm'
+import GuestCheckoutAuthModal from './components/auth/GuestCheckoutAuthModal/GuestCheckoutAuthModal'
 import UserCabinet from './components/user/UserCabinet/UserCabinet'
-import { DEFAULT_CODE } from './components/shared/utils/constants'
-import { getSession, onAuthStateChange, signOut } from './services/authService'
-import { getUserProjects, createProject, updateProject, deleteProject, transformProjectFromDB, transformProjectToDB } from './services/projectService'
+import WorkspaceInviteModal from './components/workspace/WorkspaceInviteModal/WorkspaceInviteModal'
+import WorkspaceJoinModal from './components/workspace/WorkspaceJoinModal/WorkspaceJoinModal'
+import WorkspaceJoinRequestModal from './components/workspace/WorkspaceJoinRequestModal/WorkspaceJoinRequestModal'
+import WorkspaceOnboardingView from './features/workspaceOnboarding/WorkspaceOnboardingView'
+import { DEFAULT_CODE, DEFAULT_PROJECT_STATUS } from './components/shared/utils/constants'
+import { getWorkspacePlan } from './features/workspaceOnboarding/workspacePlans'
+import {
+  canApproveProjectToProduction,
+  canChangeProjectStatus,
+  canReturnProjectToDevelopment,
+  canReopenProjectFromProduction,
+  canSendProjectToQa,
+  canUnarchiveProject,
+  canArchiveProject,
+  canCreateProjects,
+  canDeleteProject as canDeleteProjectByWorkflow,
+  canManageProject,
+  getProjectAccessMessage,
+  getProjectQaId
+} from './components/shared/utils/projectWorkflow'
+import { getCurrentProfile, getSession, onAuthStateChange, signOut } from './services/authService'
+import { createProject, deleteProject, getAccessibleProjects, updateProject, transformProjectFromDB } from './services/projectService'
+import {
+  claimPendingWorkspaceInvites,
+  createWorkspaceCheckoutSession,
+  createWorkspaceInvite,
+  getCurrentWorkspaceProfile,
+  getWorkspaceInviteDetails,
+  getWorkspaceJoinRequestDetails,
+  getWorkspaceJoinCredentialsSummary,
+  getWorkspaceInvites,
+  getWorkspaceMembers,
+  getWorkspacePaymentStatus,
+  joinWorkspaceWithCredentials,
+  listAccessibleWorkspaces,
+  removeWorkspaceMember,
+  respondToWorkspaceJoinRequest,
+  respondToWorkspaceInvite,
+  rotateWorkspaceJoinCredentials,
+  revokeWorkspaceInvite,
+  updateWorkspaceMemberRole
+} from './services/workspaceService'
+import {
+  clearProjectNotifications,
+  listProjectNotifications,
+  markAllProjectNotificationsRead,
+  markProjectNotificationRead
+} from './services/notificationService'
+import {
+  getStoredPendingPaymentStartedAt,
+  getStoredActiveWorkspaceId,
+  getStoredPendingPaymentOrderId,
+  isWorkspacePaymentFailureStatus,
+  resolvePostAuthDestination,
+  resolveWorkspaceCheckoutAccess,
+  storeActiveWorkspaceId,
+  storePendingPaymentOrderId,
+  storePendingPaymentStartedAt
+} from './features/workspaceOnboarding/workspaceAccess'
+import {
+  clearPendingWorkspaceAction,
+  createPendingCheckoutAction,
+  createPendingWorkspaceJoinAction,
+  getStoredPendingWorkspaceAction,
+  storePendingWorkspaceAction
+} from './features/workspaceOnboarding/pendingWorkspaceAction'
 import { supabase } from './lib/supabase'
+import { ROUTES } from './app/routes'
+
+const getViewFromPath = (pathname) => {
+  if (pathname === ROUTES.auth || pathname === ROUTES.root) {
+    return 'login'
+  }
+
+  if (pathname === ROUTES.onboarding) {
+    return 'onboarding'
+  }
+
+  if (pathname === ROUTES.cabinet) {
+    return 'cabinet'
+  }
+
+  if (/^\/projects\/[^/]+\/editor$/.test(pathname)) {
+    return 'editor'
+  }
+
+  if (pathname === ROUTES.projects || pathname.startsWith('/projects')) {
+    return 'projects'
+  }
+
+  return 'login'
+}
+
+const getEditorProjectIdFromPath = (pathname) => {
+  const match = pathname.match(/^\/projects\/([^/]+)\/editor$/)
+  return match ? decodeURIComponent(match[1]) : null
+}
 
 function App() {
-  const [view, setView] = useState('login')
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [view, setView] = useState(() => getViewFromPath(location.pathname))
   const [user, setUser] = useState(null)
   const [isGuest, setIsGuest] = useState(false)
   const [loading, setLoading] = useState(true)
   const isSigningOutRef = useRef(false) // Прапорець для запобігання циклів при виході
+  const isGuestRef = useRef(false)
+  const userRef = useRef(null)
+  const activeWorkspaceRef = useRef(null)
+  const pendingWorkspacePaymentOrderIdRef = useRef(getStoredPendingPaymentOrderId())
+  const pendingWorkspacePaymentStartedAtRef = useRef(getStoredPendingPaymentStartedAt())
+  const workspaceActivationSuccessRef = useRef(false)
+  const workspaceContextLoadIdRef = useRef(0)
+  const isContinuingPendingWorkspaceActionRef = useRef(false)
+  const realtimeRefreshTimeoutRef = useRef(null)
+  const accessibleWorkspacesRefreshTimeoutRef = useRef(null)
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [projects, setProjects] = useState([])
   const [editingProjectId, setEditingProjectId] = useState(null)
   const [projectName, setProjectName] = useState('')
-  const [projectStatus, setProjectStatus] = useState('')
+  const [projectStatus, setProjectStatus] = useState(DEFAULT_PROJECT_STATUS)
   const [projectFormat, setProjectFormat] = useState('')
   const [projectScreenFormat, setProjectScreenFormat] = useState('landscape')
+  const [projectDeveloperId, setProjectDeveloperId] = useState('')
+  const [projectQaId, setProjectQaId] = useState('')
   const [currentProject, setCurrentProject] = useState(null)
   const [code, setCode] = useState(DEFAULT_CODE)
   const [images, setImages] = useState([])
@@ -52,10 +161,43 @@ function App() {
   const [showCSSEditor, setShowCSSEditor] = useState(false)
   const [cssCode, setCssCode] = useState('')
   const [showAddMenu, setShowAddMenu] = useState(false)
+  const [studioNoticeModal, setStudioNoticeModal] = useState(null)
   const [sceneBackground, setSceneBackground] = useState('#ffffff')
   const [sceneBorderStyle, setSceneBorderStyle] = useState('none')
   const [sceneBorderColor, setSceneBorderColor] = useState('#000000')
   const [isSaved, setIsSaved] = useState(true)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const [isLeavingEditor, setIsLeavingEditor] = useState(false)
+  const [workflowProfile, setWorkflowProfile] = useState(null)
+  const [accessibleWorkspaces, setAccessibleWorkspaces] = useState([])
+  const [activeWorkspace, setActiveWorkspace] = useState(null)
+  const [workspaceMembers, setWorkspaceMembers] = useState([])
+  const [workspaceInvites, setWorkspaceInvites] = useState([])
+  const [workspaceJoinCredentials, setWorkspaceJoinCredentials] = useState(null)
+  const [workspaceJoinSecret, setWorkspaceJoinSecret] = useState(null)
+  const [projectNotifications, setProjectNotifications] = useState([])
+  const [workspaceInviteModal, setWorkspaceInviteModal] = useState(null)
+  const [isWorkspaceInviteModalSubmitting, setIsWorkspaceInviteModalSubmitting] = useState(false)
+  const [isWorkspaceJoinModalOpen, setIsWorkspaceJoinModalOpen] = useState(false)
+  const [workspaceJoinRequestModal, setWorkspaceJoinRequestModal] = useState(null)
+  const [isWorkspaceJoinRequestSubmitting, setIsWorkspaceJoinRequestSubmitting] = useState(false)
+  const [selectedWorkspacePlan, setSelectedWorkspacePlan] = useState('team')
+  const [guestCheckoutPlan, setGuestCheckoutPlan] = useState(null)
+  const [guestWorkspaceJoinRequest, setGuestWorkspaceJoinRequest] = useState(null)
+  const [pendingWorkspacePayment, setPendingWorkspacePayment] = useState(null)
+  const [pendingWorkspacePaymentStartedAt, setPendingWorkspacePaymentStartedAt] = useState(
+    pendingWorkspacePaymentStartedAtRef.current
+  )
+  const [workspacePaymentError, setWorkspacePaymentError] = useState('')
+  const [isStartingWorkspaceCheckout, setIsStartingWorkspaceCheckout] = useState(false)
+  const [isRefreshingWorkspacePayment, setIsRefreshingWorkspacePayment] = useState(false)
+  const [isFinalizingWorkspaceActivation, setIsFinalizingWorkspaceActivation] = useState(false)
+  const [isReturningToLogin, setIsReturningToLogin] = useState(false)
+  const [isResolvingWorkspaceContext, setIsResolvingWorkspaceContext] = useState(false)
+  const [showWorkspaceActivationSuccess, setShowWorkspaceActivationSuccess] = useState(false)
+  const [cabinetInitialTab, setCabinetInitialTab] = useState('profile')
+  const [cabinetInitialMember, setCabinetInitialMember] = useState(null)
+  const [isWorkflowActionLoading, setIsWorkflowActionLoading] = useState(false)
   const [screenFormat, setScreenFormat] = useState('landscape') // 'landscape' або 'portrait'
   const [layersWindowPosition, setLayersWindowPosition] = useState({ x: 50, y: 100 })
   const [draggingLayersWindow, setDraggingLayersWindow] = useState(false)
@@ -79,6 +221,442 @@ function App() {
   const totalCreativeSize = images.reduce((total, img) => total + (img.size || 0), 0)
   const previewRef = useRef(null)
   const timelineRef = useRef(null)
+
+  const syncGuestMode = (nextIsGuest) => {
+    isGuestRef.current = nextIsGuest
+    setIsGuest(nextIsGuest)
+  }
+
+  const syncPendingWorkspacePaymentOrderId = (nextOrderId) => {
+    pendingWorkspacePaymentOrderIdRef.current = nextOrderId
+    storePendingPaymentOrderId(nextOrderId)
+  }
+
+  const syncPendingWorkspacePaymentStartedAt = (nextStartedAt) => {
+    pendingWorkspacePaymentStartedAtRef.current = nextStartedAt
+    setPendingWorkspacePaymentStartedAt(nextStartedAt)
+    storePendingPaymentStartedAt(nextStartedAt)
+  }
+
+  const syncWorkspaceActivationSuccess = (nextValue) => {
+    workspaceActivationSuccessRef.current = nextValue
+    setShowWorkspaceActivationSuccess(nextValue)
+  }
+
+  const navigateToView = (nextView, options = {}) => {
+    const { replace = false, state, projectId = currentProject?.id } = options
+    const nextPath = (() => {
+      switch (nextView) {
+        case 'login':
+          return ROUTES.auth
+        case 'onboarding':
+          return ROUTES.onboarding
+        case 'projects':
+          return ROUTES.projects
+        case 'cabinet':
+          return ROUTES.cabinet
+        case 'editor':
+          return projectId ? ROUTES.editor(projectId) : ROUTES.projects
+        default:
+          return ROUTES.auth
+      }
+    })()
+
+    setView(nextView)
+
+    if (location.pathname !== nextPath) {
+      navigate(nextPath, { replace, state })
+    }
+  }
+
+  const goBackFromOnboarding = () => {
+    const fromPath = typeof location.state?.from === 'string' ? location.state.from : ''
+    const safeFromPath = fromPath && fromPath !== ROUTES.onboarding ? fromPath : ''
+
+    setWorkspacePaymentError('')
+
+    if (safeFromPath) {
+      navigate(safeFromPath, { replace: true })
+      setView(getViewFromPath(safeFromPath))
+      return
+    }
+
+    if (!isGuestRef.current && activeWorkspace?.workspaceId) {
+      navigateToView('projects', { replace: true })
+      return
+    }
+
+    navigateToView('login', { replace: true })
+  }
+
+  const savePendingWorkspaceAction = (action) => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    storePendingWorkspaceAction(window.localStorage, action)
+  }
+
+  const clearSavedPendingWorkspaceAction = () => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    clearPendingWorkspaceAction(window.localStorage)
+  }
+
+  const readSavedPendingWorkspaceAction = () => {
+    if (typeof window === 'undefined') {
+      return null
+    }
+
+    return getStoredPendingWorkspaceAction(window.localStorage)
+  }
+
+  const beginWorkspaceContextResolution = () => {
+    const nextLoadId = workspaceContextLoadIdRef.current + 1
+    workspaceContextLoadIdRef.current = nextLoadId
+    setIsResolvingWorkspaceContext(true)
+    return nextLoadId
+  }
+
+  const completeWorkspaceContextResolution = (loadId) => {
+    if (workspaceContextLoadIdRef.current === loadId) {
+      setIsResolvingWorkspaceContext(false)
+    }
+  }
+
+  const resetWorkspaceState = () => {
+    workspaceContextLoadIdRef.current += 1
+    setIsResolvingWorkspaceContext(false)
+    setAccessibleWorkspaces([])
+    setActiveWorkspace(null)
+    setWorkspaceMembers([])
+    setWorkspaceInvites([])
+    setWorkspaceJoinCredentials(null)
+    setWorkspaceJoinSecret(null)
+    setProjectNotifications([])
+    setGuestCheckoutPlan(null)
+    setGuestWorkspaceJoinRequest(null)
+    setPendingWorkspacePayment(null)
+    setWorkspacePaymentError('')
+    setIsFinalizingWorkspaceActivation(false)
+    syncWorkspaceActivationSuccess(false)
+    storeActiveWorkspaceId(null)
+    syncPendingWorkspacePaymentOrderId(null)
+    syncPendingWorkspacePaymentStartedAt(null)
+  }
+
+  const loadProjectNotifications = async () => {
+    try {
+      if (!userRef.current || isGuestRef.current) {
+        setProjectNotifications([])
+        return []
+      }
+
+      const notifications = await listProjectNotifications(20)
+      setProjectNotifications(notifications)
+      return notifications
+    } catch (error) {
+      console.error('Error loading project notifications:', error)
+      setProjectNotifications([])
+      return []
+    }
+  }
+
+  useEffect(() => {
+    isGuestRef.current = isGuest
+  }, [isGuest])
+
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+
+  useEffect(() => {
+    activeWorkspaceRef.current = activeWorkspace
+  }, [activeWorkspace])
+
+  useEffect(() => {
+    if (!user || isGuest || !activeWorkspace?.workspaceId) {
+      setProjectNotifications([])
+      return undefined
+    }
+
+    void loadProjectNotifications()
+
+    const notificationsRefreshInterval = window.setInterval(() => {
+      void loadProjectNotifications()
+    }, 15000)
+
+    const notificationsChannel = supabase
+      .channel(`project-notifications-${activeWorkspace.workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'project_notifications'
+        },
+        () => {
+          void loadProjectNotifications()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      window.clearInterval(notificationsRefreshInterval)
+      void supabase.removeChannel(notificationsChannel)
+    }
+  }, [user?.id, isGuest, activeWorkspace?.workspaceId])
+
+  useEffect(() => {
+    if (!user || isGuest || !activeWorkspace?.workspaceId) {
+      return undefined
+    }
+
+    const scheduleRealtimeRefresh = (options = {}) => {
+      if (realtimeRefreshTimeoutRef.current) {
+        window.clearTimeout(realtimeRefreshTimeoutRef.current)
+      }
+
+      realtimeRefreshTimeoutRef.current = window.setTimeout(() => {
+        realtimeRefreshTimeoutRef.current = null
+        const workspace = activeWorkspaceRef.current
+
+        if (!workspace?.workspaceId || isGuestRef.current) {
+          return
+        }
+
+        void loadProjects(workspace.workspaceId)
+
+        if (options.refreshWorkspaceSupport) {
+          void loadWorkspaceSupportData(workspace)
+        }
+      }, 250)
+    }
+
+    const workspaceRealtimeChannel = supabase
+      .channel(`workspace-live-${activeWorkspace.workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'projects',
+          filter: `workspace_id=eq.${activeWorkspace.workspaceId}`
+        },
+        () => {
+          scheduleRealtimeRefresh()
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workspace_members',
+          filter: `workspace_id=eq.${activeWorkspace.workspaceId}`
+        },
+        () => {
+          scheduleRealtimeRefresh({ refreshWorkspaceSupport: true })
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workspace_invites',
+          filter: `workspace_id=eq.${activeWorkspace.workspaceId}`
+        },
+        () => {
+          scheduleRealtimeRefresh({ refreshWorkspaceSupport: true })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      if (realtimeRefreshTimeoutRef.current) {
+        window.clearTimeout(realtimeRefreshTimeoutRef.current)
+        realtimeRefreshTimeoutRef.current = null
+      }
+
+      void supabase.removeChannel(workspaceRealtimeChannel)
+    }
+  }, [user?.id, isGuest, activeWorkspace?.workspaceId])
+
+  useEffect(() => {
+    if (!user || isGuest) {
+      return undefined
+    }
+
+    const refreshAccessibleWorkspaces = async () => {
+      try {
+        const workspaces = await listAccessibleWorkspaces()
+        setAccessibleWorkspaces(workspaces)
+
+        const currentWorkspace = activeWorkspaceRef.current
+        const currentWorkspaceAccess = currentWorkspace?.workspaceId
+          ? workspaces.find((workspace) => workspace.workspaceId === currentWorkspace.workspaceId)
+          : null
+
+        if (currentWorkspaceAccess) {
+          setActiveWorkspace(currentWorkspaceAccess)
+          storeActiveWorkspaceId(currentWorkspaceAccess.workspaceId)
+          await loadWorkspaceSupportData(currentWorkspaceAccess)
+          await loadProjects(currentWorkspaceAccess.workspaceId)
+          return
+        }
+
+        if (workspaces.length > 0) {
+          const nextWorkspace = resolvePostAuthDestination({
+            workspaces,
+            preferredWorkspaceId: getStoredActiveWorkspaceId()
+          }).workspace || workspaces[0]
+
+          setActiveWorkspace(nextWorkspace)
+          storeActiveWorkspaceId(nextWorkspace.workspaceId)
+          await loadWorkspaceSupportData(nextWorkspace)
+          await loadProjects(nextWorkspace.workspaceId)
+
+          if (view !== 'onboarding') {
+            navigateToView('projects', { replace: true })
+          }
+          return
+        }
+
+        setActiveWorkspace(null)
+        setWorkspaceMembers([])
+        setWorkspaceInvites([])
+        setWorkspaceJoinCredentials(null)
+        setWorkspaceJoinSecret(null)
+        setProjects([])
+        setCurrentProject(null)
+        storeActiveWorkspaceId(null)
+        navigateToView('onboarding', { replace: true })
+      } catch (error) {
+        console.error('Error refreshing accessible workspaces from realtime:', error)
+      }
+    }
+
+    const scheduleAccessibleWorkspacesRefresh = () => {
+      if (accessibleWorkspacesRefreshTimeoutRef.current) {
+        window.clearTimeout(accessibleWorkspacesRefreshTimeoutRef.current)
+      }
+
+      accessibleWorkspacesRefreshTimeoutRef.current = window.setTimeout(() => {
+        accessibleWorkspacesRefreshTimeoutRef.current = null
+        void refreshAccessibleWorkspaces()
+      }, 250)
+    }
+
+    const userWorkspaceAccessChannel = supabase
+      .channel(`user-workspace-access-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workspace_members',
+          filter: `user_id=eq.${user.id}`
+        },
+        () => {
+          scheduleAccessibleWorkspacesRefresh()
+        }
+      )
+      .subscribe()
+
+    const accessRefreshInterval = window.setInterval(() => {
+      scheduleAccessibleWorkspacesRefresh()
+    }, 5000)
+
+    return () => {
+      window.clearInterval(accessRefreshInterval)
+
+      if (accessibleWorkspacesRefreshTimeoutRef.current) {
+        window.clearTimeout(accessibleWorkspacesRefreshTimeoutRef.current)
+        accessibleWorkspacesRefreshTimeoutRef.current = null
+      }
+
+      void supabase.removeChannel(userWorkspaceAccessChannel)
+    }
+  }, [user?.id, isGuest, view])
+
+  useEffect(() => {
+    const nextView = getViewFromPath(location.pathname)
+
+    if (nextView === 'editor' && !currentProject) {
+      const routeProjectId = getEditorProjectIdFromPath(location.pathname)
+      const routeProject = projects.find((project) => String(project.id) === routeProjectId)
+
+      if (!routeProject) {
+        navigateToView('projects', { replace: true })
+        return
+      }
+    }
+
+    if (nextView !== view) {
+      setView(nextView)
+    }
+  }, [location.pathname])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadWorkflowProfile = async () => {
+      if (!user || isGuest || !activeWorkspace?.workspaceId) {
+        setWorkflowProfile(null)
+        return
+      }
+
+      try {
+        const profile = await getCurrentWorkspaceProfile(activeWorkspace.workspaceId)
+
+        if (!isMounted) {
+          return
+        }
+
+        setWorkflowProfile(
+          profile
+            ? {
+                ...profile,
+                workspaceId: activeWorkspace.workspaceId
+              }
+            : {
+                id: user.id,
+                role: 'user',
+                workspace_role: 'member',
+                workspace_type: activeWorkspace.workspaceType,
+                team_role: 'developer',
+                email: user.email,
+                workspaceId: activeWorkspace.workspaceId
+              }
+        )
+      } catch (error) {
+        console.error('Error loading workflow profile:', error)
+
+        if (!isMounted) {
+          return
+        }
+
+        setWorkflowProfile({
+          id: user.id,
+          role: 'user',
+          workspace_role: 'member',
+          workspace_type: activeWorkspace.workspaceType,
+          team_role: 'developer',
+          email: user.email,
+          workspaceId: activeWorkspace.workspaceId
+        })
+      }
+    }
+
+    loadWorkflowProfile()
+
+    return () => {
+      isMounted = false
+    }
+  }, [user, isGuest, activeWorkspace?.workspaceId, activeWorkspace?.workspaceType])
 
 
   // Закриваємо меню при кліку поза ним
@@ -403,6 +981,108 @@ function App() {
     }
   }
 
+  const getProfileForWorkflow = async () => {
+    try {
+      if (!user || !activeWorkspace?.workspaceId) {
+        return null
+      }
+
+      if (workflowProfile?.id === user.id && workflowProfile?.workspaceId === activeWorkspace.workspaceId) {
+        return workflowProfile
+      }
+
+      const profile = await getCurrentWorkspaceProfile(activeWorkspace.workspaceId)
+      const resolvedProfile = profile || {
+        id: user.id,
+        role: 'user',
+        workspace_role: 'member',
+        workspace_type: activeWorkspace.workspaceType,
+        team_role: 'developer',
+        email: user.email,
+        workspaceId: activeWorkspace.workspaceId
+      }
+
+      setWorkflowProfile({
+        ...resolvedProfile,
+        workspaceId: activeWorkspace.workspaceId
+      })
+      return resolvedProfile
+    } catch (error) {
+      console.error('Error loading workflow profile:', error)
+      return user
+        ? {
+            id: user.id,
+            role: 'user',
+            workspace_role: 'member',
+            workspace_type: activeWorkspace?.workspaceType,
+            team_role: 'developer',
+            email: user.email,
+            workspaceId: activeWorkspace?.workspaceId || null
+          }
+        : null
+    }
+  }
+
+  const ensureProjectManagementAccess = async (project, action = 'edit', nextStatus = null) => {
+    try {
+      if (!project) {
+        alert('Project not found.')
+        return false
+      }
+
+      const profile = await getProfileForWorkflow()
+      if (!profile) {
+        alert('Sign in to manage projects.')
+        return false
+      }
+
+      if (action === 'delete') {
+        if (!canDeleteProjectByWorkflow(project, profile)) {
+          alert(getProjectAccessMessage(project, profile, 'delete'))
+          return false
+        }
+
+        return true
+      }
+
+      if (action === 'status') {
+        if (!canChangeProjectStatus(project, nextStatus, profile)) {
+          alert(getProjectAccessMessage(project, profile, 'status'))
+          return false
+        }
+
+        return true
+      }
+
+      if (!canManageProject(project, profile)) {
+        alert(getProjectAccessMessage(project, profile, action))
+        return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('Error checking project permissions:', error)
+      alert('Failed to verify project permissions. Please try again.')
+      return false
+    }
+  }
+
+  const syncProjectState = (nextProject) => {
+    setProjects(prevProjects => {
+      const hasProject = prevProjects.some(project => project.id === nextProject.id)
+
+      if (!hasProject) {
+        return [...prevProjects, nextProject]
+      }
+
+      return prevProjects.map(project => (project.id === nextProject.id ? nextProject : project))
+    })
+
+    setCurrentProject(prevProject => (
+      prevProject?.id === nextProject.id ? nextProject : prevProject
+    ))
+  }
+
   const handleClearImages = () => {
     images.forEach(image => URL.revokeObjectURL(image.url))
     setImages([])
@@ -412,18 +1092,27 @@ function App() {
 
   const handleCreateProject = async (openStudio = false) => {
     if (!projectName.trim() || !projectStatus || !projectFormat) {
-      return
+      return false
     }
     
     if (isGuest) {
       alert('Гості не можуть створювати проєкти')
-      return
+      return false
     }
 
     try {
+      const profile = await getProfileForWorkflow()
+      if (!canCreateProjects(profile)) {
+        alert('Only team leads and developers can create projects.')
+        return false
+      }
+
+      const isArchivedProject = false
+      const resolvedProjectStatus = DEFAULT_PROJECT_STATUS
+
       const projectData = {
         name: projectName,
-        status: projectStatus,
+        status: resolvedProjectStatus,
         format: projectFormat,
         screenFormat: projectScreenFormat,
         images: [],
@@ -431,22 +1120,32 @@ function App() {
         cssCode: '',
         sceneBackground: '#ffffff',
         sceneBorderStyle: 'none',
-        sceneBorderColor: '#000000'
+        sceneBorderColor: '#000000',
+        developerId: projectDeveloperId || null,
+        qaId: projectQaId || null,
+        isArchived: isArchivedProject,
+        archivedAt: isArchivedProject ? new Date().toISOString() : null,
+        archivedBy: isArchivedProject ? user?.id || null : null
       }
 
-      const dbProject = await createProject(projectData)
+      if (!activeWorkspace?.workspaceId) {
+        throw new Error('Select a workspace before creating a project.')
+      }
+
+      const dbProject = await createProject(projectData, activeWorkspace.workspaceId)
       const newProject = transformProjectFromDB(dbProject)
       
       setProjects(prev => [...prev, newProject])
       setProjectName('')
-      setProjectStatus('')
-      setProjectFormat('')
+      setProjectStatus(DEFAULT_PROJECT_STATUS)
+      setProjectFormat('Banner')
       setProjectScreenFormat('landscape')
+      setProjectDeveloperId('')
+      setProjectQaId('')
       
       if (openStudio) {
         setCurrentProject(newProject)
-        setCurrentProject(newProject)
-        setView('editor')
+        navigateToView('editor', { projectId: newProject.id })
         // Очищаємо дані при створенні нового проєкту
         setImages([])
         setCode(DEFAULT_CODE)
@@ -457,11 +1156,13 @@ function App() {
         setScreenFormat(projectScreenFormat) // Встановлюємо формат з проєкту
         setIsSaved(true) // Новий проєкт вважається збереженим (порожній проєкт)
       }
+      
+      return true
     } catch (error) {
       console.error('Error creating project:', error)
       alert('Failed to create project: ' + error.message)
+      return false
     }
-    // Модальне вікно закривається через пропси
   }
 
   const handleRenameLayer = (layerId, newName) => {
@@ -732,11 +1433,16 @@ function App() {
   }
 
   const handleSave = async () => {
-    if (!currentProject) return
+    if (!currentProject) return false
     
     if (isGuest) {
       alert('Гості не можуть зберігати проєкти')
-      return
+      return false
+    }
+
+    const hasProjectAccess = await ensureProjectManagementAccess(currentProject, 'edit')
+    if (!hasProjectAccess) {
+      return false
     }
 
     try {
@@ -849,21 +1555,274 @@ function App() {
       const dbProject = await updateProject(currentProject.id, updatedProject)
       const transformedProject = transformProjectFromDB(dbProject)
       
-      setProjects(prev => prev.map(project => 
-        project.id === currentProject.id ? transformedProject : project
-      ))
-      setCurrentProject(transformedProject)
+      syncProjectState(transformedProject)
       setIsSaved(true) // Позначаємо проєкт як збережений
       setShowDocumentMenu(false)
+      return true
     } catch (error) {
       console.error('Error saving project:', error)
       alert('Failed to save project: ' + error.message)
+      return false
     }
   }
 
-  const handleSaveAndQuit = () => {
-    handleSave()
-    setView('projects')
+  const handleSaveAndQuit = async () => {
+    const saveSucceeded = await handleSave()
+    if (saveSucceeded) {
+      navigateToView('projects')
+      return true
+    }
+    return false
+  }
+
+  const handleProjectWorkflowAction = async (projectId, action, payload = {}) => {
+    try {
+      if (!projectId) {
+        alert('Project not found.')
+        return false
+      }
+
+      if (isGuest) {
+        alert('Sign in to manage project workflow.')
+        return false
+      }
+
+      const project = currentProject?.id === projectId
+        ? currentProject
+        : projects.find(item => item.id === projectId)
+
+      if (!project) {
+        alert('Project not found.')
+        return false
+      }
+
+      const profile = await getProfileForWorkflow()
+      if (!profile) {
+        alert('Sign in to manage project workflow.')
+        return false
+      }
+
+      const isCurrentProject = currentProject?.id === projectId
+      if (isCurrentProject && !isSaved) {
+        alert('Save the project before changing the workflow stage.')
+        return false
+      }
+
+      let updates = null
+      const trimmedNote = typeof payload.note === 'string' ? payload.note.trim() : ''
+      const nextTargetStatus = payload.targetStatus
+
+      switch (action) {
+        case 'send_to_qa': {
+          if (!canSendProjectToQa(project, profile, { isSaved: !isCurrentProject || isSaved })) {
+            alert('Only the assigned developer or team lead can send this project to QA after a QA has been assigned.')
+            return false
+          }
+
+          updates = {
+            status: 'qa',
+            qaHandoffNote: trimmedNote || null,
+            qaFeedbackNote: null,
+            isArchived: false,
+            archivedAt: null,
+            archivedBy: null
+          }
+          break
+        }
+
+        case 'return_to_development': {
+          if (!canReturnProjectToDevelopment(project, profile)) {
+            alert('Only the assigned QA or team lead can return this project to Development.')
+            return false
+          }
+
+          if (!trimmedNote) {
+            alert('Feedback is required before returning the project to Development.')
+            return false
+          }
+
+          updates = {
+            status: 'development',
+            qaFeedbackNote: trimmedNote,
+            isArchived: false,
+            archivedAt: null,
+            archivedBy: null
+          }
+          break
+        }
+
+        case 'approve_to_production': {
+          if (!canApproveProjectToProduction(project, profile)) {
+            alert('Only the assigned QA or team lead can approve this project for Production.')
+            return false
+          }
+
+          updates = {
+            status: 'production',
+            isArchived: false,
+            archivedAt: null,
+            archivedBy: null
+          }
+          break
+        }
+
+        case 'reopen_from_production': {
+          if (!canReopenProjectFromProduction(project, profile)) {
+            alert('Only the team lead can reopen a production project.')
+            return false
+          }
+
+          if (!['development', 'qa'].includes(nextTargetStatus)) {
+            alert('Choose whether to reopen the project in Development or QA.')
+            return false
+          }
+
+          if (nextTargetStatus === 'qa' && !getProjectQaId(project)) {
+            alert('Assign a QA before reopening the project directly to QA.')
+            return false
+          }
+
+          updates = {
+            status: nextTargetStatus,
+            isArchived: false,
+            archivedAt: null,
+            archivedBy: null
+          }
+          break
+        }
+
+        case 'archive_project': {
+          if (!canArchiveProject(project, profile)) {
+            alert('Only the team lead can archive a project from Production.')
+            return false
+          }
+
+          updates = {
+            isArchived: true,
+            archivedAt: new Date().toISOString(),
+            archivedBy: profile.id
+          }
+          break
+        }
+
+        case 'unarchive_project': {
+          if (!canUnarchiveProject(project, profile)) {
+            alert('Only the team lead can restore an archived project.')
+            return false
+          }
+
+          updates = {
+            isArchived: false,
+            archivedAt: null,
+            archivedBy: null
+          }
+          break
+        }
+
+        default:
+          alert('Unknown workflow action.')
+          return false
+      }
+
+      setIsWorkflowActionLoading(true)
+      const dbProject = await updateProject(projectId, updates)
+      const transformedProject = transformProjectFromDB(dbProject)
+      syncProjectState(transformedProject)
+      return true
+    } catch (error) {
+      console.error('Error applying project workflow action:', error)
+      alert(`Failed to update the project workflow: ${error.message}`)
+      return false
+    } finally {
+      setIsWorkflowActionLoading(false)
+    }
+  }
+
+  const resetUnsavedEditorState = () => {
+    setImages([])
+    setCode(DEFAULT_CODE)
+    setCssCode('')
+    setSceneBackground('#ffffff')
+    setSceneBorderStyle('none')
+    setSceneBorderColor('#000000')
+    setScreenFormat('landscape')
+    setSelectedImageId(null)
+    setEditingTextId(null)
+    setEditingLayerId(null)
+    setDraggingImageId(null)
+    setDraggedLayerIndex(null)
+    setResizingImageId(null)
+    setResizeHandle(null)
+    setShowDocumentMenu(false)
+    setShowJSEditor(false)
+    setShowCSSEditor(false)
+    setShowAddMenu(false)
+    setShowLayersModal(false)
+    resetTimeline()
+    setCompiled(false)
+    setError('')
+    setIsSaved(true)
+  }
+
+  const handleEditorBack = () => {
+    try {
+      if (!isSaved) {
+        setShowUnsavedChangesModal(true)
+        return
+      }
+
+      navigateToView('projects')
+    } catch (error) {
+      console.error('Error opening unsaved changes modal:', error)
+      alert('Failed to open the exit confirmation dialog. Please try again.')
+    }
+  }
+
+  const handleCloseUnsavedChangesModal = () => {
+    try {
+      if (isLeavingEditor) {
+        return
+      }
+
+      setShowUnsavedChangesModal(false)
+    } catch (error) {
+      console.error('Error closing unsaved changes modal:', error)
+      alert('Failed to close the exit confirmation dialog. Please try again.')
+    }
+  }
+
+  const handleDiscardAndLeaveEditor = () => {
+    try {
+      if (isLeavingEditor) {
+        return
+      }
+
+      resetUnsavedEditorState()
+      setShowUnsavedChangesModal(false)
+      navigateToView('projects')
+    } catch (error) {
+      console.error('Error discarding unsaved changes:', error)
+      alert('Failed to discard unsaved changes. Please try again.')
+    }
+  }
+
+  const handleSaveAndLeaveFromModal = async () => {
+    if (isLeavingEditor) {
+      return
+    }
+
+    try {
+      setIsLeavingEditor(true)
+      const didLeave = await handleSaveAndQuit()
+      if (didLeave) {
+        setShowUnsavedChangesModal(false)
+      }
+    } catch (error) {
+      console.error('Error saving changes before leaving editor:', error)
+      alert('Failed to save your changes before leaving the editor.')
+    } finally {
+      setIsLeavingEditor(false)
+    }
   }
 
   // Обробка гарячих клавіш
@@ -1142,7 +2101,11 @@ function App() {
 
   const handleExport = async () => {
     if (images.length === 0) {
-      alert('Немає зображень для експорту')
+      setStudioNoticeModal({
+        title: 'Nothing to export yet',
+        message: 'Add an image or text layer before exporting this creative.',
+        tone: 'warning'
+      })
       setShowDocumentMenu(false)
       return
     }
@@ -1179,7 +2142,11 @@ function App() {
       setShowDocumentMenu(false)
     } catch (error) {
       console.error('Помилка експорту:', error)
-      alert('Помилка експорту: ' + error.message)
+      setStudioNoticeModal({
+        title: 'Export failed',
+        message: error instanceof Error ? error.message : 'Unable to export this creative. Please try again.',
+        tone: 'danger'
+      })
     }
   }
 
@@ -1195,7 +2162,11 @@ function App() {
     }
     
     if (images.length === 0) {
-      alert('Немає зображень для превью')
+      setStudioNoticeModal({
+        title: 'Nothing to preview yet',
+        message: 'Add an image or text layer before opening the preview.',
+        tone: 'warning'
+      })
       setShowDocumentMenu(false)
       return
     }
@@ -1451,7 +2422,11 @@ function App() {
   // Функція для превью проєкту зі списку
   const handleProjectPreview = (project, format) => {
     if (!project.images || project.images.length === 0) {
-      alert('Немає зображень у проєкті для превью')
+      setStudioNoticeModal({
+        title: 'Nothing to preview yet',
+        message: 'This project does not have any layers to preview.',
+        tone: 'warning'
+      })
       return
     }
 
@@ -1675,7 +2650,11 @@ function App() {
   // Функція для експорту проєкту зі списку
   const handleProjectExport = async (project) => {
     if (!project.images || project.images.length === 0) {
-      alert('Немає зображень у проєкті для експорту')
+      setStudioNoticeModal({
+        title: 'Nothing to export yet',
+        message: 'This project does not have any layers to export.',
+        tone: 'warning'
+      })
       return
     }
 
@@ -1720,7 +2699,11 @@ function App() {
       URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Помилка експорту:', error)
-      alert('Помилка експорту: ' + error.message)
+      setStudioNoticeModal({
+        title: 'Export failed',
+        message: error instanceof Error ? error.message : 'Unable to export this project. Please try again.',
+        tone: 'danger'
+      })
     }
   }
 
@@ -1904,14 +2887,9 @@ function App() {
   }
 
   const handleEditProject = async (project) => {
-    // Перевіряємо права доступу: тільки адмін може редагувати активні проєкти
-    if (project.status === 'Active') {
-      const { isAdmin } = await import('./services/authService')
-      const adminStatus = await isAdmin()
-      if (!adminStatus) {
-        alert('Тільки адмін може редагувати активні проєкти')
-        return
-      }
+    const hasProjectAccess = await ensureProjectManagementAccess(project, 'edit')
+    if (!hasProjectAccess) {
+      return
     }
     
     setCurrentProject(project)
@@ -1990,7 +2968,328 @@ function App() {
     }
     setIsSaved(true) // При відкритті проєкту вважаємо його збереженим
     setCurrentProject(project)
-    setView('editor')
+    navigateToView('editor', { projectId: project.id })
+  }
+
+  const createWorkspaceInviteModalFallback = (notification) => {
+    const notificationText = `${notification?.body || ''} ${notification?.title || ''}`.trim()
+    const inviteMatch = notificationText.match(/invited to join\s+(.+?)\s+as\s+(.+?)\./i)
+    const rawRoleLabel = inviteMatch?.[2]?.trim() || 'Workspace member'
+    const normalizedRoleLabel = rawRoleLabel.toLowerCase()
+    const workspaceId = notification.workspaceId || activeWorkspace?.workspaceId || null
+
+    return {
+      workspaceId,
+      workspaceName: inviteMatch?.[1]?.trim() || activeWorkspace?.workspaceName || 'workspace',
+      workflowRole: normalizedRoleLabel.includes('qa') ? 'qa' : normalizedRoleLabel.includes('developer') ? 'developer' : 'member',
+      workflowRoleLabel: rawRoleLabel,
+      invitedByName: null,
+      invitedByEmail: null,
+      isLoadingDetails: true,
+      detailsError: null,
+      notificationId: notification.id
+    }
+  }
+
+  const createWorkspaceJoinRequestModalFallback = (notification) => {
+    const notificationText = `${notification?.body || ''} ${notification?.title || ''}`.trim()
+    const requestMatch = notificationText.match(/^(.+?)\s+requested access to\s+(.+?)\./i)
+
+    return {
+      requestId: notification.id,
+      workspaceId: notification.workspaceId || activeWorkspace?.workspaceId || null,
+      workspaceName: requestMatch?.[2]?.trim() || activeWorkspace?.workspaceName || 'workspace',
+      requesterUserId: notification.actorUserId || '',
+      requesterName: requestMatch?.[1]?.trim() || null,
+      requesterEmail: null,
+      status: 'pending',
+      requestedAt: notification.createdAt || new Date().toISOString(),
+      workflowRole: null,
+      isLoadingDetails: true,
+      detailsError: null,
+      notificationId: notification.id
+    }
+  }
+
+  const handleProjectNotificationSelect = async (notification) => {
+    try {
+      if (!notification?.id) {
+        return
+      }
+
+      const isWorkspaceJoinRequestNotification = notification.type === 'workspace_join_requested'
+      const isWorkspaceInviteNotification = notification.type === 'workspace_invite_received'
+      const inviteWorkspaceId = notification.workspaceId || activeWorkspace?.workspaceId || null
+
+      if (isWorkspaceJoinRequestNotification) {
+        setWorkspaceJoinRequestModal(createWorkspaceJoinRequestModalFallback(notification))
+        setProjectNotifications((previousNotifications) =>
+          previousNotifications.map((item) =>
+            item.id === notification.id ? { ...item, isRead: true } : item
+          )
+        )
+
+        window.setTimeout(() => {
+          void (async () => {
+            try {
+              await markProjectNotificationRead(notification.id)
+            } catch (readError) {
+              console.error('Error marking workspace join request notification as read:', readError)
+            }
+
+            const requestWorkspaceId = notification.workspaceId || activeWorkspaceRef.current?.workspaceId || null
+            const requesterUserId = notification.actorUserId || null
+
+            if (!requestWorkspaceId || !requesterUserId) {
+              setWorkspaceJoinRequestModal((currentRequest) => {
+                if (!currentRequest || currentRequest.notificationId !== notification.id) {
+                  return currentRequest
+                }
+
+                return {
+                  ...currentRequest,
+                  isLoadingDetails: false,
+                  detailsError: 'Unable to resolve the join request details for this notification.'
+                }
+              })
+              return
+            }
+
+            try {
+              const requestDetails = await getWorkspaceJoinRequestDetails({
+                workspaceId: requestWorkspaceId,
+                requesterUserId
+              })
+              setWorkspaceJoinRequestModal((currentRequest) => {
+                if (!currentRequest || currentRequest.notificationId !== notification.id) {
+                  return currentRequest
+                }
+
+                return {
+                  ...requestDetails,
+                  notificationId: notification.id,
+                  isLoadingDetails: false,
+                  detailsError: null
+                }
+              })
+            } catch (detailsError) {
+              console.error('Error loading workspace join request details:', detailsError)
+              setWorkspaceJoinRequestModal((currentRequest) => {
+                if (!currentRequest || currentRequest.notificationId !== notification.id) {
+                  return currentRequest
+                }
+
+                return {
+                  ...currentRequest,
+                  isLoadingDetails: false,
+                  detailsError: detailsError instanceof Error
+                    ? detailsError.message
+                    : 'Unable to load the workspace join request details.'
+                }
+              })
+            }
+          })()
+        }, 0)
+
+        return
+      }
+
+      if (isWorkspaceInviteNotification) {
+        setWorkspaceInviteModal(createWorkspaceInviteModalFallback(notification))
+        setProjectNotifications((previousNotifications) =>
+          previousNotifications.map((item) =>
+            item.id === notification.id ? { ...item, isRead: true } : item
+          )
+        )
+
+        window.setTimeout(() => {
+          void (async () => {
+            try {
+              await markProjectNotificationRead(notification.id)
+            } catch (readError) {
+              console.error('Error marking workspace invite notification as read:', readError)
+            }
+
+            if (!inviteWorkspaceId) {
+              setWorkspaceInviteModal((currentInvite) => {
+                if (!currentInvite || currentInvite.notificationId !== notification.id) {
+                  return currentInvite
+                }
+
+                return {
+                  ...currentInvite,
+                  isLoadingDetails: false,
+                  detailsError: 'Unable to resolve the workspace for this invitation.'
+                }
+              })
+              return
+            }
+
+            try {
+              const inviteDetails = await getWorkspaceInviteDetails(inviteWorkspaceId)
+              setWorkspaceInviteModal((currentInvite) => {
+                if (!currentInvite || currentInvite.notificationId !== notification.id) {
+                  return currentInvite
+                }
+
+                return {
+                  ...inviteDetails,
+                  notificationId: notification.id,
+                  isLoadingDetails: false,
+                  detailsError: null
+                }
+              })
+            } catch (detailsError) {
+              console.error('Error loading workspace invite details:', detailsError)
+              setWorkspaceInviteModal((currentInvite) => {
+                if (!currentInvite || currentInvite.notificationId !== notification.id) {
+                  return currentInvite
+                }
+
+                return {
+                  ...currentInvite,
+                  isLoadingDetails: false,
+                  detailsError: detailsError instanceof Error
+                    ? detailsError.message
+                    : 'Unable to load the full invitation details.'
+                }
+              })
+            }
+          })()
+        }, 0)
+
+        return
+      }
+
+      await markProjectNotificationRead(notification.id)
+      setProjectNotifications((previousNotifications) =>
+        previousNotifications.map((item) =>
+          item.id === notification.id ? { ...item, isRead: true } : item
+        )
+      )
+
+      if (notification.type === 'workspace_join_accepted' && notification.workspaceId) {
+        await loadWorkspaceContext({
+          preferredWorkspaceId: notification.workspaceId
+        })
+        navigateToView('projects')
+        return
+      }
+
+      if (notification.type === 'workspace_join_declined') {
+        navigateToView('projects')
+        return
+      }
+
+      if (notification.projectId) {
+        const notificationProject = projects.find((project) => project.id === notification.projectId)
+
+        if (notificationProject) {
+          await handleEditProject(notificationProject)
+          return
+        }
+      }
+
+      navigateToView('projects')
+    } catch (error) {
+      console.error('Error opening project notification:', error)
+      alert('Unable to open this notification. Please try again.')
+    }
+  }
+
+  const handleMarkAllProjectNotificationsRead = async () => {
+    try {
+      await markAllProjectNotificationsRead()
+      setProjectNotifications((previousNotifications) =>
+        previousNotifications.map((notification) => ({ ...notification, isRead: true }))
+      )
+    } catch (error) {
+      console.error('Error marking project notifications as read:', error)
+      alert('Unable to mark notifications as read. Please try again.')
+    }
+  }
+
+  const handleCloseWorkspaceInviteModal = () => {
+    if (isWorkspaceInviteModalSubmitting) {
+      return
+    }
+
+    setWorkspaceInviteModal(null)
+  }
+
+  const handleWorkspaceInviteModalResponse = async (action) => {
+    if (!workspaceInviteModal?.workspaceId || isWorkspaceInviteModalSubmitting) {
+      return
+    }
+
+    try {
+      setIsWorkspaceInviteModalSubmitting(true)
+      const inviteResponse = await respondToWorkspaceInvite({
+        workspaceId: workspaceInviteModal.workspaceId,
+        action
+      })
+
+      setWorkspaceInviteModal(null)
+
+      if (action === 'accept') {
+        await loadWorkspaceContext({
+          preferredWorkspaceId: inviteResponse.workspaceId
+        })
+      }
+
+      await loadProjectNotifications()
+    } catch (error) {
+      console.error('Error responding to workspace invitation:', error)
+      alert(error instanceof Error ? error.message : 'Unable to respond to the workspace invitation. Please try again.')
+    } finally {
+      setIsWorkspaceInviteModalSubmitting(false)
+    }
+  }
+
+  const handleCloseWorkspaceJoinRequestModal = () => {
+    if (isWorkspaceJoinRequestSubmitting) {
+      return
+    }
+
+    setWorkspaceJoinRequestModal(null)
+  }
+
+  const handleWorkspaceJoinRequestModalResponse = async (action, workflowRole = 'developer') => {
+    if (!workspaceJoinRequestModal?.requestId || isWorkspaceJoinRequestSubmitting) {
+      return
+    }
+
+    try {
+      setIsWorkspaceJoinRequestSubmitting(true)
+      await respondToWorkspaceJoinRequest({
+        requestId: workspaceJoinRequestModal.requestId,
+        action,
+        workflowRole: action === 'accept' ? workflowRole : undefined
+      })
+
+      setWorkspaceJoinRequestModal(null)
+
+      if (activeWorkspace?.workspaceId) {
+        await loadWorkspaceSupportData(activeWorkspace)
+      }
+
+      await loadProjectNotifications()
+    } catch (error) {
+      console.error('Error responding to workspace join request:', error)
+      alert(error instanceof Error ? error.message : 'Unable to respond to the workspace join request. Please try again.')
+    } finally {
+      setIsWorkspaceJoinRequestSubmitting(false)
+    }
+  }
+
+  const handleClearProjectNotifications = async () => {
+    try {
+      await clearProjectNotifications()
+      setProjectNotifications([])
+    } catch (error) {
+      console.error('Error clearing project notifications:', error)
+      alert('Unable to clear notifications. Please try again.')
+    }
   }
 
   const handleUpdateProject = async (projectId, field, value) => {
@@ -2001,15 +3300,21 @@ function App() {
 
     // Знаходимо проєкт для перевірки статусу
     const project = projects.find(p => p.id === projectId)
+    const profile = await getProfileForWorkflow()
+
+    if ((field === 'developerId' || field === 'qaId') && profile?.role !== 'admin') {
+      alert('Only team leads can update project assignments.')
+      return
+    }
     
-    // Перевіряємо права доступу при зміні активного проєкту
-    if (project && project.status === 'Active' && (field === 'name' || field === 'status')) {
-      const { isAdmin } = await import('./services/authService')
-      const adminStatus = await isAdmin()
-      if (!adminStatus) {
-        alert('Тільки адмін може редагувати активні проєкти')
-        return
-      }
+    if (field === 'status') {
+      alert('Use the workflow buttons in the editor to change the project stage.')
+      return
+    }
+
+    const hasProjectAccess = await ensureProjectManagementAccess(project, 'edit')
+    if (!hasProjectAccess) {
+      return
     }
 
     try {
@@ -2043,20 +3348,9 @@ function App() {
       return
     }
 
-    // Перевіряємо права доступу: звичайний користувач не може видаляти активні проєкти
-    if (project.status === 'Active') {
-      try {
-        const { isAdmin } = await import('./services/authService')
-        const adminStatus = await isAdmin()
-        if (!adminStatus) {
-          alert('Тільки адмін може видаляти активні проєкти')
-          return
-        }
-      } catch (error) {
-        console.error('Error checking admin status:', error)
-        alert('Помилка перевірки прав доступу')
-        return
-      }
+    const hasProjectAccess = await ensureProjectManagementAccess(project, 'delete')
+    if (!hasProjectAccess) {
+      return
     }
 
     if (!window.confirm('Ви впевнені, що хочете видалити цей проєкт?')) {
@@ -2069,7 +3363,7 @@ function App() {
       
       // Якщо видалюваний проєкт відкритий в редакторі, закриваємо редактор
       if (currentProject && currentProject.id === projectId) {
-        setView('projects')
+        navigateToView('projects')
         setCurrentProject(null)
         setImages([])
         setCode(DEFAULT_CODE)
@@ -2100,9 +3394,11 @@ function App() {
 
   const handleNewProject = () => {
     setProjectName('')
-    setProjectStatus('Paused') // Завжди Paused за замовчуванням
-    setProjectFormat('PageGrabber X') // Завжди PageGrabber X за замовчуванням
+    setProjectStatus(DEFAULT_PROJECT_STATUS)
+    setProjectFormat('Banner')
     setProjectScreenFormat('landscape')
+    setProjectDeveloperId('')
+    setProjectQaId('')
     setShowProjectModal(true)
   }
 
@@ -2110,8 +3406,412 @@ function App() {
     setShowProjectModal(false)
   }
 
+  const loadWorkspaceSupportData = async (workspace) => {
+    if (!workspace?.workspaceId || isGuestRef.current) {
+      setWorkspaceMembers([])
+      setWorkspaceInvites([])
+      setWorkspaceJoinCredentials(null)
+      setWorkspaceJoinSecret(null)
+      return
+    }
+
+    setWorkspaceJoinSecret(null)
+
+    try {
+      const members = await getWorkspaceMembers(workspace.workspaceId)
+      setWorkspaceMembers(members)
+    } catch (error) {
+      console.error('Error loading workspace members:', error)
+      setWorkspaceMembers([])
+    }
+
+    if (workspace.workspaceRole === 'owner' && workspace.workspaceType === 'team') {
+      try {
+        const invites = await getWorkspaceInvites(workspace.workspaceId)
+        setWorkspaceInvites(invites)
+      } catch (error) {
+        console.error('Error loading workspace invites:', error)
+        setWorkspaceInvites([])
+      }
+
+      try {
+        const credentialsSummary = await getWorkspaceJoinCredentialsSummary(workspace.workspaceId)
+        setWorkspaceJoinCredentials(credentialsSummary)
+      } catch (error) {
+        console.error('Error loading workspace credentials:', error)
+        setWorkspaceJoinCredentials(null)
+      }
+    } else {
+      setWorkspaceInvites([])
+      setWorkspaceJoinCredentials(null)
+    }
+  }
+
+  const loadWorkspaceContext = async ({
+    preferredWorkspaceId = getStoredActiveWorkspaceId(),
+    showActivationSuccess = false
+  } = {}) => {
+    if (isGuestRef.current) {
+      return null
+    }
+
+    const loadId = beginWorkspaceContextResolution()
+
+    try {
+      await claimPendingWorkspaceInvites()
+    } catch (error) {
+      console.error('Error claiming pending invites:', error)
+    }
+
+    try {
+      const workspaces = await listAccessibleWorkspaces()
+      setAccessibleWorkspaces(workspaces)
+
+      const destination = resolvePostAuthDestination({
+        workspaces,
+        preferredWorkspaceId
+      })
+      const shouldShowActivationSuccess = Boolean(showActivationSuccess || workspaceActivationSuccessRef.current)
+
+      if (!destination.workspace) {
+        setActiveWorkspace(null)
+        setWorkspaceMembers([])
+        setWorkspaceInvites([])
+        setWorkspaceJoinCredentials(null)
+        setWorkspaceJoinSecret(null)
+        setProjects([])
+        if (!shouldShowActivationSuccess) {
+          syncWorkspaceActivationSuccess(false)
+        }
+        navigateToView('onboarding', { replace: true })
+        storeActiveWorkspaceId(null)
+        return null
+      }
+
+      setActiveWorkspace(destination.workspace)
+      storeActiveWorkspaceId(destination.workspace.workspaceId)
+
+      await loadProjects(destination.workspace.workspaceId)
+      await loadWorkspaceSupportData(destination.workspace)
+
+      if (shouldShowActivationSuccess) {
+        syncWorkspaceActivationSuccess(true)
+        navigateToView('onboarding', { replace: true })
+      } else {
+        syncWorkspaceActivationSuccess(false)
+        navigateToView(destination.nextView, { replace: true })
+      }
+
+      return destination.workspace
+    } finally {
+      completeWorkspaceContextResolution(loadId)
+    }
+  }
+
+  const handleWorkspaceChange = async (workspaceId) => {
+    const nextWorkspace = accessibleWorkspaces.find((workspace) => workspace.workspaceId === workspaceId)
+
+    if (!nextWorkspace) {
+      return
+    }
+
+    try {
+      setActiveWorkspace(nextWorkspace)
+      storeActiveWorkspaceId(nextWorkspace.workspaceId)
+      await loadProjects(nextWorkspace.workspaceId)
+      await loadWorkspaceSupportData(nextWorkspace)
+      syncWorkspaceActivationSuccess(false)
+      navigateToView('projects')
+    } catch (error) {
+      console.error('Error switching workspace:', error)
+      alert('Failed to switch the workspace: ' + error.message)
+    }
+  }
+
+  const handleOpenWorkspaceAccess = () => {
+    setWorkspacePaymentError('')
+    setIsFinalizingWorkspaceActivation(false)
+
+    if (!isGuest && activeWorkspace?.workspaceId) {
+      if (activeWorkspace.workspaceType === 'team' && activeWorkspace.workspaceRole === 'owner') {
+        setCabinetInitialTab('workspace')
+        navigateToView('cabinet', { state: { from: location.pathname } })
+        return
+      }
+
+      syncWorkspaceActivationSuccess(true)
+      navigateToView('onboarding', { state: { from: location.pathname } })
+      return
+    }
+
+    syncWorkspaceActivationSuccess(false)
+    setPendingWorkspacePayment(null)
+    navigateToView('onboarding', { state: { from: location.pathname } })
+  }
+
+  const openGuestCheckoutAuthModal = (planType) => {
+    setSelectedWorkspacePlan(planType)
+    setGuestCheckoutPlan(planType)
+    setGuestWorkspaceJoinRequest(null)
+    savePendingWorkspaceAction(createPendingCheckoutAction(planType))
+    setWorkspacePaymentError('')
+    setIsFinalizingWorkspaceActivation(false)
+    syncWorkspaceActivationSuccess(false)
+    setPendingWorkspacePayment(null)
+    syncPendingWorkspacePaymentStartedAt(null)
+    navigateToView('onboarding', { state: { from: location.pathname } })
+  }
+
+  const openGuestWorkspaceJoinAuthModal = ({ workspaceLogin, workspacePassword }) => {
+    setGuestWorkspaceJoinRequest({ workspaceLogin, workspacePassword })
+    setGuestCheckoutPlan(null)
+    savePendingWorkspaceAction(createPendingWorkspaceJoinAction({ workspaceLogin, workspacePassword }))
+    setWorkspacePaymentError('')
+    setIsFinalizingWorkspaceActivation(false)
+    syncWorkspaceActivationSuccess(false)
+    navigateToView('onboarding', { state: { from: location.pathname } })
+  }
+
+  const handleReturnToLogin = async () => {
+    try {
+      setIsReturningToLogin(true)
+      setWorkspacePaymentError('')
+
+      if (user && !isGuestRef.current) {
+        isSigningOutRef.current = true
+        await signOut()
+      }
+
+      setUser(null)
+      syncGuestMode(false)
+      resetWorkspaceState()
+      setProjects([])
+      navigateToView('login', { replace: true })
+    } catch (error) {
+      isSigningOutRef.current = false
+      console.error('Error signing out:', error)
+      setWorkspacePaymentError(error?.message || 'Unable to sign out right now.')
+    } finally {
+      setIsReturningToLogin(false)
+    }
+  }
+
+  const handleBackFromOnboarding = async () => {
+    try {
+      setIsReturningToLogin(true)
+      goBackFromOnboarding()
+    } catch (error) {
+      console.error('Error going back from onboarding:', error)
+      setWorkspacePaymentError(error?.message || 'Unable to go back right now.')
+    } finally {
+      setIsReturningToLogin(false)
+    }
+  }
+
+  const handleStartWorkspaceCheckout = async (planType, options = {}) => {
+    const authenticatedUser = options.authenticatedUser || user
+    const checkoutAccess = resolveWorkspaceCheckoutAccess({
+      isGuest: isGuestRef.current,
+      hasUser: Boolean(authenticatedUser),
+      planType
+    })
+
+    try {
+      setSelectedWorkspacePlan(planType)
+      setIsFinalizingWorkspaceActivation(false)
+
+      if (checkoutAccess.requiresAuth) {
+        openGuestCheckoutAuthModal(planType)
+        return
+      }
+
+      setIsStartingWorkspaceCheckout(true)
+      setGuestCheckoutPlan(null)
+      setPendingWorkspacePayment(null)
+      setWorkspacePaymentError('')
+      const checkoutStartedAt = Date.now()
+      const workspacePlan = getWorkspacePlan(planType)
+      syncPendingWorkspacePaymentStartedAt(checkoutStartedAt)
+
+      const session = await createWorkspaceCheckoutSession(planType)
+      syncPendingWorkspacePaymentOrderId(session.orderId)
+      setPendingWorkspacePayment({
+        id: session.paymentId,
+        orderId: session.orderId,
+        workspaceId: null,
+        planType,
+        amountMinor: workspacePlan.amountMinor,
+        currency: workspacePlan.currency,
+        status: 'processing',
+        paidAt: null,
+        createdAt: new Date(checkoutStartedAt).toISOString(),
+        checkoutUrl: session.checkoutUrl
+      })
+      window.location.href = session.checkoutUrl
+    } catch (error) {
+      console.error('Error starting workspace checkout:', error)
+      syncPendingWorkspacePaymentStartedAt(null)
+      setWorkspacePaymentError(error.message || 'Unable to start the payment session.')
+    } finally {
+      setIsStartingWorkspaceCheckout(false)
+    }
+  }
+
+  const handleJoinWorkspace = async ({ workspaceLogin, workspacePassword }, options = {}) => {
+    const authenticatedUser = options.authenticatedUser || user
+
+    if (isGuestRef.current || !authenticatedUser) {
+      openGuestWorkspaceJoinAuthModal({ workspaceLogin, workspacePassword })
+      return { requiresAuthentication: true }
+    }
+
+    setWorkspacePaymentError('')
+    setGuestWorkspaceJoinRequest(null)
+    setIsFinalizingWorkspaceActivation(false)
+    syncWorkspaceActivationSuccess(false)
+
+    const joinedWorkspace = await joinWorkspaceWithCredentials({
+      workspaceLogin,
+      workspacePassword
+    })
+
+    if (joinedWorkspace.status === 'pending_approval') {
+      setWorkspacePaymentError(`Your request to join ${joinedWorkspace.workspaceName} was sent to the team lead for review.`)
+      return joinedWorkspace
+    }
+
+    await loadWorkspaceContext({
+      preferredWorkspaceId: joinedWorkspace.workspaceId
+    })
+
+    return joinedWorkspace
+  }
+
+  const handleJoinWorkspaceFromHeader = async ({ workspaceLogin, workspacePassword }) => {
+    try {
+      const joinedWorkspace = await handleJoinWorkspace({ workspaceLogin, workspacePassword })
+      navigateToView('projects')
+      return joinedWorkspace
+    } catch (error) {
+      console.error('Error joining workspace from header:', error)
+      throw error instanceof Error ? error : new Error('Unable to join this workspace.')
+    }
+  }
+
+  const continuePendingWorkspaceAction = async (authenticatedUser = user) => {
+    if (!authenticatedUser || isGuestRef.current || isContinuingPendingWorkspaceActionRef.current) {
+      return false
+    }
+
+    const pendingAction = readSavedPendingWorkspaceAction()
+
+    if (!pendingAction) {
+      return false
+    }
+
+    try {
+      isContinuingPendingWorkspaceActionRef.current = true
+      clearSavedPendingWorkspaceAction()
+
+      if (pendingAction.type === 'checkout') {
+        await handleStartWorkspaceCheckout(pendingAction.planType, { authenticatedUser })
+        return true
+      }
+
+      if (pendingAction.type === 'workspaceJoin') {
+        await handleJoinWorkspace(
+          {
+            workspaceLogin: pendingAction.workspaceLogin,
+            workspacePassword: pendingAction.workspacePassword
+          },
+          { authenticatedUser }
+        )
+        return true
+      }
+    } catch (error) {
+      console.error('Error continuing pending workspace action:', error)
+      setWorkspacePaymentError(error?.message || 'Unable to continue the saved workspace action.')
+    } finally {
+      isContinuingPendingWorkspaceActionRef.current = false
+    }
+
+    return false
+  }
+
+  useEffect(() => {
+    if (!user || isGuest || loading || isResolvingWorkspaceContext) {
+      return
+    }
+
+    void continuePendingWorkspaceAction(user)
+  }, [user, isGuest, loading, isResolvingWorkspaceContext])
+
+  const handleRotateWorkspaceCredentials = async () => {
+    if (!activeWorkspace?.workspaceId) {
+      throw new Error('Select an active workspace before rotating shared credentials.')
+    }
+
+    const rotatedCredentials = await rotateWorkspaceJoinCredentials(activeWorkspace.workspaceId)
+    setWorkspaceJoinCredentials({
+      workspaceId: rotatedCredentials.workspaceId,
+      workspaceLogin: rotatedCredentials.workspaceLogin,
+      hasCredentials: rotatedCredentials.hasCredentials,
+      isEnabled: rotatedCredentials.isEnabled,
+      createdAt: rotatedCredentials.createdAt,
+      rotatedAt: rotatedCredentials.rotatedAt
+    })
+    setWorkspaceJoinSecret(rotatedCredentials)
+
+    return rotatedCredentials
+  }
+
+  const handleCreateWorkspaceInvite = async (email, workflowRole) => {
+    if (!activeWorkspace?.workspaceId) {
+      throw new Error('Select an active corporate workspace before adding invites.')
+    }
+
+    await createWorkspaceInvite({
+      workspaceId: activeWorkspace.workspaceId,
+      email,
+      workflowRole
+    })
+
+    const invites = await getWorkspaceInvites(activeWorkspace.workspaceId)
+    setWorkspaceInvites(invites)
+  }
+
+  const handleRevokeWorkspaceInvite = async (inviteId) => {
+    if (!activeWorkspace?.workspaceId) {
+      throw new Error('Select an active corporate workspace before changing invites.')
+    }
+
+    await revokeWorkspaceInvite(inviteId)
+    const invites = await getWorkspaceInvites(activeWorkspace.workspaceId)
+    setWorkspaceInvites(invites)
+  }
+
+  const handleUpdateWorkspaceMemberRole = async (membershipId, workflowRole) => {
+    if (!activeWorkspace?.workspaceId) {
+      throw new Error('Select an active corporate workspace before changing member access.')
+    }
+
+    await updateWorkspaceMemberRole({ membershipId, workflowRole })
+    const members = await getWorkspaceMembers(activeWorkspace.workspaceId)
+    setWorkspaceMembers(members)
+  }
+
+  const handleRemoveWorkspaceMember = async (membershipId) => {
+    if (!activeWorkspace?.workspaceId) {
+      throw new Error('Select an active corporate workspace before removing members.')
+    }
+
+    await removeWorkspaceMember(membershipId)
+    const members = await getWorkspaceMembers(activeWorkspace.workspaceId)
+    setWorkspaceMembers(members)
+  }
+
   // Завантаження проєктів з БД
-  const loadProjects = async () => {
+  const loadProjects = async (workspaceIdOverride = activeWorkspace?.workspaceId || null) => {
     const startTime = performance.now()
     const time = new Date().toLocaleTimeString('uk-UA', { hour12: false, fractionalSecondDigits: 3 })
     console.log(`[${time}] [БД ДЕБАГ] loadProjects: Початок завантаження проєктів з БД...`)
@@ -2122,17 +3822,27 @@ function App() {
     })
     
     try {
-      // Крок 1: Імпорт функції
-      console.log(`[${time}] [БД ДЕБАГ] loadProjects: Крок 1 - Імпорт getPublicProjects`)
+      console.log(`[${time}] [БД ДЕБАГ] loadProjects: Крок 1 - Вибір джерела проєктів`)
       const importStartTime = performance.now()
-      const { getPublicProjects } = await import('./services/projectService')
+      let projectsData = []
+
+      if (isGuest) {
+        const { getPublicProjects } = await import('./services/projectService')
+        projectsData = await getPublicProjects()
+      } else if (!workspaceIdOverride) {
+        projectsData = []
+      } else {
+        projectsData = await getAccessibleProjects(workspaceIdOverride)
+      }
+
       const importDuration = (performance.now() - importStartTime).toFixed(2)
       console.log(`[${time}] [БД ДЕБАГ] loadProjects: Крок 1 успішний (${importDuration}ms)`)
       
       // Крок 2: Отримання даних з БД
-      console.log(`[${time}] [БД ДЕБАГ] loadProjects: Крок 2 - Виклик getPublicProjects()`)
+      console.log(`[${time}] [БД ДЕБАГ] loadProjects: Крок 2 - Отримання списку проєктів`, {
+        source: isGuest ? 'public-projects' : 'workflow-accessible-projects'
+      })
       const getDataStartTime = performance.now()
-      const projectsData = await getPublicProjects()
       const getDataDuration = (performance.now() - getDataStartTime).toFixed(2)
       console.log(`[${time}] [БД ДЕБАГ] loadProjects: Крок 2 успішний (${getDataDuration}ms)`, {
         rawDataCount: projectsData?.length || 0,
@@ -2158,6 +3868,13 @@ function App() {
       console.log(`[${time}] [БД ДЕБАГ] loadProjects: Крок 4 - Встановлення стану`)
       const setStateStartTime = performance.now()
       setProjects(transformedProjects)
+      setCurrentProject((previousProject) => {
+        if (!previousProject) {
+          return previousProject
+        }
+
+        return transformedProjects.find((project) => project.id === previousProject.id) || previousProject
+      })
       const setStateDuration = (performance.now() - setStateStartTime).toFixed(2)
       const totalDuration = (performance.now() - startTime).toFixed(2)
       
@@ -2185,6 +3902,109 @@ function App() {
       console.log(`[${time}] [БД ДЕБАГ] loadProjects: Встановлено порожній масив проєктів`)
     }
   }
+
+  useEffect(() => {
+    if (!user || isGuest) {
+      return undefined
+    }
+
+    if (!pendingWorkspacePaymentOrderIdRef.current) {
+      return undefined
+    }
+
+    let mounted = true
+
+    const refreshPendingPayment = async () => {
+      const pendingOrderId = pendingWorkspacePaymentOrderIdRef.current
+
+      if (!pendingOrderId) {
+        return
+      }
+
+      try {
+        setIsRefreshingWorkspacePayment(true)
+        const payment = await getWorkspacePaymentStatus(pendingOrderId)
+
+        if (!mounted || pendingWorkspacePaymentOrderIdRef.current !== pendingOrderId) {
+          return
+        }
+
+        if (!payment) {
+          setPendingWorkspacePayment(null)
+          setIsFinalizingWorkspaceActivation(false)
+          navigateToView('onboarding', { replace: true })
+          return
+        }
+
+        if (payment.status === 'paid') {
+          setIsFinalizingWorkspaceActivation(true)
+          syncWorkspaceActivationSuccess(true)
+          setPendingWorkspacePayment(payment)
+          setWorkspacePaymentError('')
+
+          let activatedWorkspace = null
+
+          try {
+            activatedWorkspace = await loadWorkspaceContext({
+              preferredWorkspaceId: payment.workspaceId || getStoredActiveWorkspaceId(),
+              showActivationSuccess: true
+            })
+          } finally {
+            if (mounted) {
+              if (activatedWorkspace) {
+                syncPendingWorkspacePaymentOrderId(null)
+                syncPendingWorkspacePaymentStartedAt(null)
+                setPendingWorkspacePayment(null)
+                setIsFinalizingWorkspaceActivation(false)
+              } else {
+                setPendingWorkspacePayment(payment)
+                navigateToView('onboarding', { replace: true })
+              }
+            }
+          }
+          return
+        }
+
+        if (isWorkspacePaymentFailureStatus(payment.status)) {
+          syncPendingWorkspacePaymentOrderId(null)
+          syncPendingWorkspacePaymentStartedAt(null)
+          syncWorkspaceActivationSuccess(false)
+          setPendingWorkspacePayment(payment)
+          setIsFinalizingWorkspaceActivation(false)
+          setWorkspacePaymentError(
+            payment.status === 'cancelled'
+              ? 'The payment was cancelled before confirmation. You can restart checkout whenever you are ready.'
+              : 'The payment could not be completed. Please try again.'
+          )
+          navigateToView('onboarding', { replace: true })
+          return
+        }
+
+        setIsFinalizingWorkspaceActivation(false)
+        syncPendingWorkspacePaymentStartedAt(payment.createdAt ? new Date(payment.createdAt).getTime() : pendingWorkspacePaymentStartedAtRef.current)
+        setPendingWorkspacePayment(payment)
+        setWorkspacePaymentError('')
+        navigateToView('onboarding', { replace: true })
+      } catch (error) {
+        if (mounted) {
+          console.error('Error refreshing workspace payment:', error)
+          setWorkspacePaymentError(error.message || 'Unable to refresh the payment status.')
+        }
+      } finally {
+        if (mounted) {
+          setIsRefreshingWorkspacePayment(false)
+        }
+      }
+    }
+
+    refreshPendingPayment()
+    const intervalId = setInterval(refreshPendingPayment, 5000)
+
+    return () => {
+      mounted = false
+      clearInterval(intervalId)
+    }
+  }, [user, isGuest])
 
   // Перевірка автентифікації при завантаженні
   useEffect(() => {
@@ -2228,19 +4048,16 @@ function App() {
           console.log('[БД ДЕБАГ] Користувач авторизований:', session.user.email)
           // Перевіряємо, чи вже оброблено подію автентифікації через onAuthStateChange
           if (!authStateHandled) {
-          setUser(session.user)
-          setIsGuest(false)
-            // Завантажуємо проєкти з БД
-          try {
-            await loadProjects()
-          } catch (error) {
-              console.error('[БД ДЕБАГ] Помилка завантаження проєктів при перевірці автентифікації:', error)
-              // Продовжуємо навіть якщо не вдалося завантажити проєкти
-          }
-            // Встановлюємо view на projects після успішної автентифікації
-          if (mounted) {
-            setView('projects')
-          }
+            setUser(session.user)
+            syncGuestMode(false)
+
+            try {
+              await loadWorkspaceContext({
+                preferredWorkspaceId: getStoredActiveWorkspaceId()
+              })
+            } catch (error) {
+              console.error('[БД ДЕБАГ] Помилка завантаження workspace context:', error)
+            }
         } else {
             console.log('[БД ДЕБАГ] Стан автентифікації вже оброблено через onAuthStateChange, пропускаємо')
           }
@@ -2249,11 +4066,12 @@ function App() {
           // Перевіряємо, чи вже оброблено подію автентифікації через onAuthStateChange
           if (!authStateHandled) {
             // Явно встановлюємо null для user і false для isGuest
-          setUser(null)
-          setIsGuest(false)
+            setUser(null)
+            syncGuestMode(false)
+            resetWorkspaceState()
             // Встановлюємо view на login якщо користувач не авторизований
-          if (mounted) {
-            setView('login')
+            if (mounted) {
+              navigateToView('login', { replace: true })
             }
           } else {
             console.log('[БД ДЕБАГ] Стан автентифікації вже оброблено через onAuthStateChange, пропускаємо')
@@ -2269,7 +4087,8 @@ function App() {
         })
         if (mounted) {
           setUser(null)
-          setIsGuest(false)
+          syncGuestMode(false)
+          resetWorkspaceState()
         }
       } finally {
         clearTimeout(timeoutId)
@@ -2295,7 +4114,8 @@ function App() {
           hasSession: !!session,
           userId: session?.user?.id,
           email: session?.user?.email,
-          authStateHandled
+          authStateHandled,
+          isGuest: isGuestRef.current
         })
         
         // Обробляємо помилки refresh token
@@ -2303,17 +4123,18 @@ function App() {
           console.log('[БД ДЕБАГ] Виявлено вихід через помилку refresh token')
           authStateHandled = true
           setUser(null)
-          setIsGuest(false)
+          syncGuestMode(false)
+          resetWorkspaceState()
           setProjects([])
           if (mounted) {
-            setView('login')
+            navigateToView('login', { replace: true })
             setLoading(false)
           }
           return
         }
         
         // Якщо користувач у гостьовому режимі, ігноруємо події автентифікації
-        if (isGuest && event !== 'SIGNED_OUT') {
+        if (isGuestRef.current && event !== 'SIGNED_OUT') {
           console.log('[БД ДЕБАГ] onAuthStateChange: Ігноруємо подію (гостьовий режим)')
           return
         }
@@ -2326,13 +4147,19 @@ function App() {
         }
         
         if (session?.user) {
-          // ВАЖЛИВО: Спочатку встановлюємо користувача та view СИНХРОННО
-          // щоб checkAuth бачив, що стан вже оброблено
-          console.log(`[БД ДЕБАГ] onAuthStateChange: ШВИДКЕ встановлення користувача та view для події ${event}`)
+          console.log(`[БД ДЕБАГ] onAuthStateChange: ШВИДКЕ встановлення користувача для події ${event}`)
+          const isSameActiveSession =
+            userRef.current?.id === session.user.id && Boolean(activeWorkspaceRef.current?.workspaceId)
+          const shouldResolveWorkspaceContext =
+            (event === 'SIGNED_IN' && !isSameActiveSession) || (event === 'INITIAL_SESSION' && !authStateHandled)
+
           setUser(session.user)
-          setIsGuest(false)
+          syncGuestMode(false)
           if (mounted) {
-            setView('projects')
+            if (event === 'SIGNED_IN' && shouldResolveWorkspaceContext) {
+              setIsResolvingWorkspaceContext(true)
+              navigateToView('onboarding', { replace: true })
+            }
             // Встановлюємо loading в false для подій входу
             if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
               console.log(`[БД ДЕБАГ] onAuthStateChange: Встановлюємо loading в false для події ${event}`)
@@ -2343,6 +4170,11 @@ function App() {
           // Встановлюємо прапорець ПІСЛЯ встановлення користувача
           authStateHandled = true
           
+          if (!shouldResolveWorkspaceContext) {
+            console.log(`[БД ДЕБАГ] onAuthStateChange: Пропускаємо workspace reload для події ${event}`)
+            return
+          }
+
           // Тепер виконуємо асинхронні операції (перевірка бану, завантаження проєктів)
           // в фоновому режимі - використовуємо setTimeout щоб не блокувати callback
           setTimeout(async () => {
@@ -2353,7 +4185,7 @@ function App() {
               .from('profiles')
               .select('banned')
               .eq('id', session.user.id)
-              .single()
+              .maybeSingle()
             
             if (profileError) {
                 console.warn('[БД ДЕБАГ] Помилка перевірки бану:', profileError.message)
@@ -2363,25 +4195,27 @@ function App() {
                 // Якщо користувач забанений, виходимо
                 console.log('[БД ДЕБАГ] Користувач забанений, вихід з системи...')
                 isSigningOutRef.current = true
-              await signOut()
-              setUser(null)
-              setIsGuest(false)
-              setProjects([])
-              if (mounted) {
-                setView('login')
+                await signOut()
+                setUser(null)
+                syncGuestMode(false)
+                resetWorkspaceState()
+                setProjects([])
+                if (mounted) {
+                  navigateToView('login', { replace: true })
                   setLoading(false)
-              }
-              alert('Your account has been blocked. Please contact an administrator.')
+                }
+                alert('Your account has been blocked. Please contact an administrator.')
                 return
               }
               
-              // Завантажуємо проєкти після перевірки бану
-              console.log(`[БД ДЕБАГ] onAuthStateChange: Завантаження проєктів для події ${event}`)
-          try {
-            await loadProjects()
-          } catch (error) {
-                console.error(`[БД ДЕБАГ] onAuthStateChange: Помилка завантаження проєктів для події ${event}:`, error)
-          }
+              console.log(`[БД ДЕБАГ] onAuthStateChange: Завантаження workspace context для події ${event}`)
+              try {
+                await loadWorkspaceContext({
+                  preferredWorkspaceId: getStoredActiveWorkspaceId()
+                })
+              } catch (error) {
+                console.error(`[БД ДЕБАГ] onAuthStateChange: Помилка завантаження workspace context для події ${event}:`, error)
+              }
               
               console.log(`[БД ДЕБАГ] onAuthStateChange: Обробка події ${event} завершена`, {
                 event,
@@ -2396,10 +4230,11 @@ function App() {
           // Скидаємо стан тільки при явному виході
           if (event === 'SIGNED_OUT') {
             setUser(null)
-            setIsGuest(false)
+            syncGuestMode(false)
+            resetWorkspaceState()
             setProjects([])
             if (mounted) {
-              setView('login')
+              navigateToView('login', { replace: true })
               setLoading(false) // Убеждаемся, что loading сброшен
             }
           }
@@ -2448,7 +4283,7 @@ function App() {
           .from('profiles')
           .select('banned')
           .eq('id', user.id)
-          .single()
+          .maybeSingle()
         
         if (profileError) {
           console.warn('[БД ДЕБАГ] Помилка періодичної перевірки бану:', profileError.message)
@@ -2460,9 +4295,10 @@ function App() {
           await signOut()
           if (mounted) {
             setUser(null)
-            setIsGuest(false)
+            syncGuestMode(false)
+            resetWorkspaceState()
             setProjects([])
-            setView('login')
+            navigateToView('login', { replace: true })
             setLoading(false) // Убеждаемся, что loading сброшен
             alert('Ваш аккаунт заблокирован. Обратитесь к администратору.')
           }
@@ -2504,7 +4340,8 @@ function App() {
   // Прибрано для запобігання зациклюванню - onAuthStateChange вже керує view
   // Цей useEffect викликав конфлікти з onAuthStateChange
 
-  const handleAuthSuccess = async () => {
+  const handleAuthSuccess = async (options = {}) => {
+    const shouldContinuePendingWorkspaceAction = options.continuePendingWorkspaceAction !== false
     const startTime = performance.now()
     const time = new Date().toLocaleTimeString('uk-UA', { hour12: false, fractionalSecondDigits: 3 })
     console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Початок обробки успішного входу...`)
@@ -2527,7 +4364,7 @@ function App() {
         const totalDuration = (performance.now() - startTime).toFixed(2)
         console.warn(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Сесію не знайдено після входу (${sessionDuration}ms, загалом ${totalDuration}ms)`)
         setLoading(false)
-        return
+        return null
       }
       
       console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Крок 1 успішний (${sessionDuration}ms)`, {
@@ -2543,7 +4380,7 @@ function App() {
           .from('profiles')
           .select('banned')
           .eq('id', session.user.id)
-          .single()
+          .maybeSingle()
         
         const banCheckDuration = (performance.now() - banCheckStartTime).toFixed(2)
         
@@ -2559,12 +4396,13 @@ function App() {
           console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Користувач забанений, вихід... (загалом ${totalDuration}ms)`)
           await signOut()
           setUser(null)
-          setIsGuest(false)
+          syncGuestMode(false)
+          resetWorkspaceState()
           setProjects([])
-          setView('login')
+          navigateToView('login', { replace: true })
           setLoading(false)
           alert('Ваш акаунт заблоковано. Зверніться до адміністратора.')
-          return
+          return null
         }
         
         console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Крок 2 успішний (${banCheckDuration}ms)`, {
@@ -2579,40 +4417,45 @@ function App() {
       // Крок 3: Встановлення користувача
       console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Крок 3 - Встановлення користувача`)
       setUser(session.user)
-      setIsGuest(false)
+      syncGuestMode(false)
       console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Крок 3 завершено - стан оновлено`, {
         userId: session.user.id,
         email: session.user.email
       })
       
-      // Крок 4: Завантаження проєктів
-      console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Крок 4 - Завантаження проєктів`)
+      // Крок 4: Завантаження workspace context
+      console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Крок 4 - Завантаження workspace context`)
       const loadProjectsStartTime = performance.now()
       try {
-        await loadProjects()
+        await loadWorkspaceContext({
+          preferredWorkspaceId: getStoredActiveWorkspaceId()
+        })
         const loadProjectsDuration = (performance.now() - loadProjectsStartTime).toFixed(2)
         console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Крок 4 успішний (${loadProjectsDuration}ms)`)
       } catch (error) {
         const loadProjectsDuration = (performance.now() - loadProjectsStartTime).toFixed(2)
-        console.error(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Помилка завантаження проєктів (${loadProjectsDuration}ms)`, {
+        console.error(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Помилка завантаження workspace context (${loadProjectsDuration}ms)`, {
           message: error.message,
           code: error.code
         })
-        // Продовжуємо навіть якщо не вдалося завантажити проєкти
+        // Продовжуємо навіть якщо не вдалося завантажити workspace context
       }
       
-      // Крок 5: Встановлення view та loading
-      console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Крок 5 - Встановлення view та loading`)
-      setView('projects')
+      // Крок 5: Встановлення loading
+      console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Крок 5 - Встановлення loading`)
       setLoading(false)
+
+      if (shouldContinuePendingWorkspaceAction) {
+        await continuePendingWorkspaceAction(session.user)
+      }
       
       const totalDuration = (performance.now() - startTime).toFixed(2)
       console.log(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Вхід завершено успішно (загалом ${totalDuration}ms)`, {
-        view: 'projects',
         loading: false,
         hasUser: true,
         isGuest: false
       })
+      return session.user
     } catch (error) {
       const totalDuration = (performance.now() - startTime).toFixed(2)
       console.error(`[${time}] [БД ДЕБАГ] handleAuthSuccess: Помилка при обробці входу (${totalDuration}ms)`, {
@@ -2622,6 +4465,7 @@ function App() {
       })
       setLoading(false)
       // Не встановлюємо помилку тут, щоб не заважати onAuthStateChange
+      return null
     }
   }
 
@@ -2633,10 +4477,11 @@ function App() {
       // Встановлюємо гостьовий режим
       // Для гостя user має бути null, а isGuest = true
       console.log(`[${time}] [БД ДЕБАГ] handleGuestLogin: Встановлення гостьового режиму`)
-    setUser(null)
-    setIsGuest(true)
+      setUser(null)
+      syncGuestMode(true)
+      resetWorkspaceState()
       setLoading(false) // Скидаємо loading для гостя
-      setView('projects') // Встановлюємо view одразу
+      navigateToView('projects', { replace: true }) // Встановлюємо view одразу
       
       console.log(`[${time}] [БД ДЕБАГ] handleGuestLogin: Завантаження проєктів для гостя`)
       // Завантажуємо проєкти для гостя
@@ -2647,22 +4492,106 @@ function App() {
       const time = new Date().toLocaleTimeString('uk-UA', { hour12: false, fractionalSecondDigits: 3 })
       console.error(`[${time}] [БД ДЕБАГ] handleGuestLogin: Помилка`, error)
       setLoading(false)
-      setView('login')
+      navigateToView('login', { replace: true })
     }
   }
+
+  const unreadProjectNotificationCount = projectNotifications.filter((notification) => !notification.isRead).length
+  const canJoinTeamWorkspaceFromHeader = Boolean(
+    user &&
+    !isGuest
+  )
+  const workspaceInviteModalElement = workspaceInviteModal ? (
+    <WorkspaceInviteModal
+      invite={workspaceInviteModal}
+      isSubmitting={isWorkspaceInviteModalSubmitting}
+      onAccept={() => handleWorkspaceInviteModalResponse('accept')}
+      onDecline={() => handleWorkspaceInviteModalResponse('decline')}
+      onClose={handleCloseWorkspaceInviteModal}
+    />
+  ) : null
+  const workspaceJoinModalElement = isWorkspaceJoinModalOpen ? (
+    <WorkspaceJoinModal
+      onClose={() => setIsWorkspaceJoinModalOpen(false)}
+      onJoin={handleJoinWorkspaceFromHeader}
+    />
+  ) : null
+  const workspaceJoinRequestModalElement = workspaceJoinRequestModal ? (
+    <WorkspaceJoinRequestModal
+      request={workspaceJoinRequestModal}
+      isSubmitting={isWorkspaceJoinRequestSubmitting}
+      onAccept={(workflowRole) => handleWorkspaceJoinRequestModalResponse('accept', workflowRole)}
+      onDecline={() => handleWorkspaceJoinRequestModalResponse('decline')}
+      onClose={handleCloseWorkspaceJoinRequestModal}
+    />
+  ) : null
+  const studioNoticeModalElement = studioNoticeModal ? (
+    <div className="studio-notice-modal-overlay" onClick={() => setStudioNoticeModal(null)}>
+      <div
+        className={`studio-notice-modal studio-notice-modal--${studioNoticeModal.tone || 'info'}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="studio-notice-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="studio-notice-modal__close"
+          onClick={() => setStudioNoticeModal(null)}
+          aria-label="Close notice"
+        >
+          <X size={16} />
+        </button>
+
+        <div className="studio-notice-modal__icon">
+          <AlertTriangle size={20} />
+        </div>
+
+        <div className="studio-notice-modal__content">
+          <span className="studio-notice-modal__eyebrow">Studio notice</span>
+          <h2 id="studio-notice-modal-title">{studioNoticeModal.title}</h2>
+          <p>{studioNoticeModal.message}</p>
+        </div>
+
+        <div className="studio-notice-modal__actions">
+          <button type="button" onClick={() => setStudioNoticeModal(null)}>
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+  const projectAssignableUsers = (workspaceMembers || [])
+    .filter((workspaceMember) => !workspaceMember.banned)
+    .map((workspaceMember) => ({
+      id: workspaceMember.userId,
+      email: workspaceMember.email,
+      fullName: workspaceMember.fullName,
+      profileRole: workspaceMember.profileRole,
+      workflowRole: workspaceMember.workflowRole || 'developer',
+      membershipRole: workspaceMember.membershipRole
+    }))
+  const canAssignProjectMembers =
+    !isGuest &&
+    activeWorkspace?.workspaceType === 'team' &&
+    (
+      activeWorkspace?.workspaceRole === 'owner' ||
+      workflowProfile?.role === 'admin' ||
+      workflowProfile?.workspace_role === 'owner' ||
+      workflowProfile?.workspaceRole === 'owner'
+    )
 
   // Показуємо завантаження тільки якщо ще перевіряємо автентифікацію
   if (loading) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#050816',
-        color: '#e5e7eb'
-      }}>
-        Loading...
+      <div className="app-loading-screen">
+        <div className="app-loading-panel">
+          <div className="app-loading-eyebrow">Creative operations</div>
+          <h1 className="app-loading-title">Preparing your workspace</h1>
+          <p className="app-loading-copy">
+            We are syncing your session, workflow permissions, and project data.
+          </p>
+        </div>
       </div>
     )
   }
@@ -2674,6 +4603,92 @@ function App() {
         onAuthSuccess={handleAuthSuccess} 
         onGuestLogin={handleGuestLogin} 
       />
+    )
+  }
+
+  if (view === 'onboarding') {
+    return (
+      <>
+        <WorkspaceOnboardingView
+          activeWorkspace={showWorkspaceActivationSuccess ? activeWorkspace : null}
+          pendingPayment={pendingWorkspacePayment}
+          pendingOrderId={pendingWorkspacePayment?.orderId || pendingWorkspacePaymentOrderIdRef.current}
+          pendingPaymentStartedAt={pendingWorkspacePayment?.createdAt ? new Date(pendingWorkspacePayment.createdAt).getTime() : pendingWorkspacePaymentStartedAt}
+          isResolvingWorkspaceContext={isResolvingWorkspaceContext}
+          invites={workspaceInvites}
+          members={workspaceMembers}
+          workspaceJoinCredentials={workspaceJoinCredentials}
+          workspaceJoinSecret={workspaceJoinSecret}
+          selectedPlanType={selectedWorkspacePlan}
+          isStartingCheckout={isStartingWorkspaceCheckout}
+          isRefreshingPayment={isRefreshingWorkspacePayment}
+          isFinalizingActivation={isFinalizingWorkspaceActivation}
+          isReturningToLogin={isReturningToLogin}
+          paymentError={workspacePaymentError}
+          onPlanChange={setSelectedWorkspacePlan}
+          onJoinWorkspace={handleJoinWorkspace}
+          onStartCheckout={handleStartWorkspaceCheckout}
+          onReturnToLogin={handleBackFromOnboarding}
+          onOpenWorkspaceAccess={handleOpenWorkspaceAccess}
+          onContinueToWorkspace={() => {
+            syncPendingWorkspacePaymentOrderId(null)
+            setPendingWorkspacePayment(null)
+            setWorkspacePaymentError('')
+            setIsFinalizingWorkspaceActivation(false)
+            syncWorkspaceActivationSuccess(false)
+            navigateToView('projects')
+          }}
+          onCreateInvite={handleCreateWorkspaceInvite}
+          onRotateWorkspaceCredentials={handleRotateWorkspaceCredentials}
+          onRevokeInvite={handleRevokeWorkspaceInvite}
+        />
+
+        {guestCheckoutPlan && (
+          <GuestCheckoutAuthModal
+            planType={guestCheckoutPlan}
+            onAuthSuccess={handleAuthSuccess}
+            onContinueToCheckout={async (planType, authenticatedUser) => {
+              clearSavedPendingWorkspaceAction()
+              setGuestCheckoutPlan(null)
+              await handleStartWorkspaceCheckout(planType, { authenticatedUser })
+            }}
+            onCancel={(options) => {
+              if (!options?.preservePendingAction) {
+                clearSavedPendingWorkspaceAction()
+              }
+              setGuestCheckoutPlan(null)
+            }}
+          />
+        )}
+
+        {guestWorkspaceJoinRequest && (
+          <GuestCheckoutAuthModal
+            continuation="workspaceJoin"
+            workspaceLogin={guestWorkspaceJoinRequest.workspaceLogin}
+            onAuthSuccess={handleAuthSuccess}
+            onContinueToWorkspaceJoin={async (authenticatedUser) => {
+              const joinRequest = guestWorkspaceJoinRequest
+
+              if (!joinRequest) {
+                throw new Error('Workspace credentials were not found. Please enter them again.')
+              }
+
+              clearSavedPendingWorkspaceAction()
+              await handleJoinWorkspace(joinRequest, { authenticatedUser })
+              setGuestWorkspaceJoinRequest(null)
+            }}
+            onCancel={(options) => {
+              if (!options?.preservePendingAction) {
+                clearSavedPendingWorkspaceAction()
+              }
+              setGuestWorkspaceJoinRequest(null)
+            }}
+          />
+        )}
+        {workspaceInviteModalElement}
+        {workspaceJoinRequestModalElement}
+        {studioNoticeModalElement}
+      </>
     )
   }
 
@@ -2691,13 +4706,23 @@ function App() {
           onProjectPreview={handleProjectPreview}
           onProjectExport={handleProjectExport}
           onDeleteProject={handleDeleteProject}
-          onSignOut={async () => {
-            await signOut()
-            setUser(null)
-            setIsGuest(false)
-            setView('login')
+          onOpenWorkspaceAccess={handleOpenWorkspaceAccess}
+          onOpenWorkspaceJoin={canJoinTeamWorkspaceFromHeader ? () => setIsWorkspaceJoinModalOpen(true) : undefined}
+          activeWorkspace={activeWorkspace}
+          accessibleWorkspaces={accessibleWorkspaces}
+          workflowProfile={workflowProfile}
+          notifications={projectNotifications}
+          unreadNotificationCount={unreadProjectNotificationCount}
+          onNotificationSelect={handleProjectNotificationSelect}
+          onMarkAllNotificationsRead={handleMarkAllProjectNotificationsRead}
+          onClearNotifications={handleClearProjectNotifications}
+          onWorkspaceChange={handleWorkspaceChange}
+          onSignOut={handleReturnToLogin}
+          onOpenCabinet={(tab = 'profile', options = {}) => {
+            setCabinetInitialTab(tab)
+            setCabinetInitialMember(options.member || null)
+            navigateToView('cabinet')
           }}
-          onOpenCabinet={() => setView('cabinet')}
           isGuest={isGuest}
         />
         {showProjectModal && (
@@ -2706,21 +4731,35 @@ function App() {
             projectStatus={projectStatus}
             projectFormat={projectFormat}
             screenFormat={projectScreenFormat}
+            developerId={projectDeveloperId}
+            qaId={projectQaId}
+            assignableUsers={projectAssignableUsers}
+            canAssignProjectMembers={canAssignProjectMembers}
             onNameChange={setProjectName}
             onStatusChange={setProjectStatus}
             onFormatChange={setProjectFormat}
             onScreenFormatChange={setProjectScreenFormat}
+            onDeveloperChange={setProjectDeveloperId}
+            onQaChange={setProjectQaId}
             onClose={handleCloseModal}
-            onSave={() => {
-              handleCreateProject(false)
-              setShowProjectModal(false)
+            onSave={async () => {
+              const created = await handleCreateProject(false)
+              if (created) {
+                setShowProjectModal(false)
+              }
             }}
-            onSaveAndOpen={() => {
-              handleCreateProject(true)
-              setShowProjectModal(false)
+            onSaveAndOpen={async () => {
+              const created = await handleCreateProject(true)
+              if (created) {
+                setShowProjectModal(false)
+              }
             }}
           />
         )}
+        {workspaceInviteModalElement}
+        {workspaceJoinModalElement}
+        {workspaceJoinRequestModalElement}
+        {studioNoticeModalElement}
       </>
     )
   }
@@ -2728,24 +4767,54 @@ function App() {
   // Сторінка кабінету користувача
   if (view === 'cabinet') {
     if (isGuest) {
-      setView('projects')
+      navigateToView('projects', { replace: true })
       return null
     }
     return (
-      <UserCabinet
-        projects={projects}
-        onBack={() => setView('projects')}
-        onSignOut={async () => {
-          await signOut()
-          setUser(null)
-          setIsGuest(false)
-          setView('login')
-        }}
-        onEditProject={handleEditProject}
-        onProjectPreview={handleProjectPreview}
-        onProjectExport={handleProjectExport}
-        onDeleteProject={handleDeleteProject}
-      />
+      <>
+        <UserCabinet
+          projects={projects}
+          activeWorkspace={activeWorkspace}
+          accessibleWorkspaces={accessibleWorkspaces}
+          workspaceMembers={workspaceMembers}
+          workspaceInvites={workspaceInvites}
+          workspaceJoinCredentials={workspaceJoinCredentials}
+          workspaceJoinSecret={workspaceJoinSecret}
+          initialActiveTab={cabinetInitialTab}
+          initialSelectedMember={cabinetInitialMember}
+          notifications={projectNotifications}
+          unreadNotificationCount={unreadProjectNotificationCount}
+          onNotificationSelect={handleProjectNotificationSelect}
+          onMarkAllNotificationsRead={handleMarkAllProjectNotificationsRead}
+          onClearNotifications={handleClearProjectNotifications}
+          onWorkspaceChange={handleWorkspaceChange}
+          onOpenWorkspaceJoin={canJoinTeamWorkspaceFromHeader ? () => setIsWorkspaceJoinModalOpen(true) : undefined}
+          onCreateWorkspaceInvite={handleCreateWorkspaceInvite}
+          onRevokeWorkspaceInvite={handleRevokeWorkspaceInvite}
+          onUpdateWorkspaceMemberRole={handleUpdateWorkspaceMemberRole}
+          onRemoveWorkspaceMember={handleRemoveWorkspaceMember}
+          onRotateWorkspaceCredentials={handleRotateWorkspaceCredentials}
+          onRefreshWorkspaceData={async () => {
+            if (activeWorkspace?.workspaceId) {
+              await loadWorkspaceSupportData(activeWorkspace)
+            }
+          }}
+          onBack={() => {
+            setCabinetInitialTab('profile')
+            setCabinetInitialMember(null)
+            navigateToView('projects')
+          }}
+          onSignOut={handleReturnToLogin}
+          onEditProject={handleEditProject}
+          onProjectPreview={handleProjectPreview}
+          onProjectExport={handleProjectExport}
+          onDeleteProject={handleDeleteProject}
+        />
+        {workspaceInviteModalElement}
+        {workspaceJoinModalElement}
+        {workspaceJoinRequestModalElement}
+        {studioNoticeModalElement}
+      </>
     )
   }
 
@@ -2759,38 +4828,22 @@ function App() {
   if (view === 'editor' && currentProject) {
     return (
     <div className="studio-root">
-      <MenuBar
-        showDocumentMenu={showDocumentMenu}
-        onToggleDocumentMenu={() => setShowDocumentMenu(!showDocumentMenu)}
-        onLandscapePreview={handleLandscapePreview}
-        onPortraitPreview={handlePortraitPreview}
-        screenFormat={screenFormat}
-        onExport={handleExport}
-        onSave={handleSave}
-        onSaveAndQuit={handleSaveAndQuit}
-      />
+      <div className="studio-shell-top">
+        <MenuBar
+          showDocumentMenu={showDocumentMenu}
+          onToggleDocumentMenu={() => setShowDocumentMenu(!showDocumentMenu)}
+          onLandscapePreview={handleLandscapePreview}
+          onPortraitPreview={handlePortraitPreview}
+          screenFormat={screenFormat}
+          onExport={handleExport}
+          onSave={handleSave}
+          onSaveAndQuit={handleSaveAndQuit}
+          onLogoClick={handleEditorBack}
+          isSaved={isSaved}
+          project={currentProject}
+        />
 
-      <Header
-        project={currentProject}
-        onBack={() => {
-          if (!isSaved) {
-            // Якщо проєкт не збережено, очищаємо всі дані
-            setImages([])
-            setCode(DEFAULT_CODE)
-            setCssCode('')
-            setSceneBackground('#ffffff')
-            setSceneBorderStyle('none')
-            setSceneBorderColor('#000000')
-            setScreenFormat('landscape')
-            setSelectedImageId(null)
-            setEditingTextId(null)
-            resetTimeline()
-            setCompiled(false)
-            setError('')
-          }
-          setView('projects')
-        }}
-      />
+      </div>
 
       <div className="studio-content">
         <InspectorPanel
@@ -2878,7 +4931,9 @@ function App() {
           onShowJSEditor={() => setShowJSEditor(true)}
           onShowCSSEditor={() => setShowCSSEditor(true)}
           onDeleteLayer={handleDeleteLayer}
+          onSelectLayer={setSelectedImageId}
           selectedImageId={selectedImageId}
+          images={images}
           sceneBackground={sceneBackground}
           sceneBorderStyle={sceneBorderStyle}
           sceneBorderColor={sceneBorderColor}
@@ -2911,42 +4966,57 @@ function App() {
       <button
         className="studio-add-button"
         onClick={() => setShowAddMenu(true)}
-        title="Add content"
+        title="Add layer"
+        aria-label="Add new layer"
       >
-        +
+        <span className="studio-add-button__icon">+</span>
+        <span>Add layer</span>
       </button>
 
       {/* Модальное окно выбора типа контента */}
       {showAddMenu && (
         <div className="modal-overlay" onClick={() => setShowAddMenu(false)}>
-          <div className="modal-content add-content-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">Add Content</h2>
-              <button className="modal-close" onClick={() => setShowAddMenu(false)}>×</button>
+          <div className="modal-dialog add-content-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header add-content-header">
+              <div>
+                <span className="editor-modal-eyebrow">Add layer</span>
+                <h2 className="modal-title">What would you like to add?</h2>
+              </div>
+              <button className="modal-close add-content-close" onClick={() => setShowAddMenu(false)} aria-label="Close add layer modal">
+                <X size={16} />
+              </button>
             </div>
             <div className="modal-body">
               <div className="add-content-options">
                 <button
-                  className="add-content-option"
+                  className="add-content-option add-content-option-image"
                   onClick={() => {
                     setShowAddMenu(false)
                     document.getElementById('studio-file-input').click()
                   }}
                 >
-                  <div className="add-content-icon">🖼️</div>
-                  <div className="add-content-label">Image</div>
-                  <div className="add-content-description">Upload image from computer</div>
+                  <div className="add-content-icon">
+                    <ImageIcon size={22} />
+                  </div>
+                  <div className="add-content-label">Image layer</div>
+                  <div className="add-content-description">
+                    Upload or link an asset. Supports PNG, JPG, SVG, and WebP up to 20 MB.
+                  </div>
                 </button>
                 <button
-                  className="add-content-option"
+                  className="add-content-option add-content-option-text"
                   onClick={() => {
                     setShowAddMenu(false)
                     handleAddText()
                   }}
                 >
-                  <div className="add-content-icon">📝</div>
-                  <div className="add-content-label">Text</div>
-                  <div className="add-content-description">Add text element</div>
+                  <div className="add-content-icon">
+                    <Type size={22} />
+                  </div>
+                  <div className="add-content-label">Text layer</div>
+                  <div className="add-content-description">
+                    Create a typographic layer with positioning, tracking, and motion support.
+                  </div>
                 </button>
                 </div>
             </div>
@@ -2958,6 +5028,8 @@ function App() {
         <JSEditor
           code={code}
           images={images}
+          sceneBackground={sceneBackground}
+          screenFormat={screenFormat}
           onCodeChange={(newCode) => {
             setCode(newCode)
             setIsSaved(false) // Помечаем проект как несохраненный при изменении кода
@@ -2973,6 +5045,8 @@ function App() {
       {showCSSEditor && (
         <CSSEditor
           cssCode={cssCode}
+          images={images}
+          sceneBackground={sceneBackground}
           onCssChange={(newCss) => {
             setCssCode(newCss)
             setIsSaved(false) // Помечаем проект как несохраненный при изменении CSS
@@ -2985,6 +5059,7 @@ function App() {
       {showLayersModal && (
         <LayersWindow
           images={images}
+          projectName={currentProject?.name}
           selectedImageId={selectedImageId}
           editingLayerId={editingLayerId}
           draggedLayerIndex={draggedLayerIndex}
@@ -3006,6 +5081,18 @@ function App() {
           }}
         />
       )}
+
+      {showUnsavedChangesModal && (
+        <UnsavedChangesModal
+          projectName={currentProject?.name}
+          isSaving={isLeavingEditor}
+          onCancel={handleCloseUnsavedChangesModal}
+          onDiscard={handleDiscardAndLeaveEditor}
+          onSaveAndLeave={handleSaveAndLeaveFromModal}
+        />
+      )}
+
+      {studioNoticeModalElement}
 
       <div className="studio-code-panel-hidden">
           <textarea

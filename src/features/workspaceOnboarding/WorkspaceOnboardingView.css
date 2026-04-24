@@ -1,0 +1,1474 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap");
+
+.workspace-shell {
+  min-height: 100vh;
+  padding: 18px 28px 28px;
+  color: #f2f5f8;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(114, 153, 243, 0.08), transparent 20%),
+    radial-gradient(circle at 84% 86%, rgba(158, 116, 231, 0.08), transparent 18%),
+    linear-gradient(180deg, #080a11 0%, #06080e 100%);
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+
+.workspace-shell-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 54px;
+}
+
+.workspace-shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workspace-shell-brand-badge {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(114, 153, 243, 0.18);
+  background: rgba(15, 19, 31, 0.88);
+  color: #f2f5f8;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.workspace-shell-brand-name {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.workspace-shell-brand-subname {
+  margin-top: 3px;
+  color: rgba(114, 153, 243, 0.72);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+.workspace-shell-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-shell-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(139, 148, 167, 0.75);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.workspace-shell-step.current {
+  color: #f2f5f8;
+}
+
+.workspace-shell-step.complete {
+  color: rgba(242, 245, 248, 0.88);
+}
+
+.workspace-shell-step-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(107, 114, 128, 0.5);
+}
+
+.workspace-shell-step.complete .workspace-shell-step-dot,
+.workspace-shell-step.current .workspace-shell-step-dot {
+  background: #36d399;
+  box-shadow: 0 0 12px rgba(54, 211, 153, 0.42);
+}
+
+.workspace-shell-step.current .workspace-shell-step-dot {
+  background: #7299f3;
+  box-shadow: 0 0 12px rgba(114, 153, 243, 0.44);
+}
+
+.workspace-shell-step-line {
+  width: 28px;
+  height: 1px;
+  margin: 0 12px;
+  background: rgba(107, 114, 128, 0.28);
+}
+
+.workspace-shell-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.workspace-shell-return-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(33, 37, 49, 0.94);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(23, 27, 38, 0.8);
+  color: rgba(242, 245, 248, 0.88);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.workspace-shell-return-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(114, 153, 243, 0.32);
+  box-shadow: 0 16px 28px rgba(0, 0, 0, 0.18);
+}
+
+.workspace-shell-return-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+  transform: none;
+  box-shadow: none;
+}
+
+.workspace-pricing-hero,
+.workspace-success-hero,
+.workspace-payment-hero {
+  max-width: 720px;
+  margin: 0 auto 42px;
+  text-align: center;
+}
+
+.workspace-section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(114, 153, 243, 0.9);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+.workspace-section-kicker-danger {
+  color: rgba(248, 148, 148, 0.92);
+}
+
+.workspace-section-kicker-warning {
+  color: rgba(238, 196, 104, 0.94);
+}
+
+.workspace-hero-title {
+  max-width: 740px;
+  margin: 18px auto 0;
+  color: #ece8fb;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(3.2rem, 6vw, 4.6rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
+
+.workspace-hero-copy {
+  max-width: 620px;
+  margin: 18px auto 0;
+  color: rgba(139, 148, 167, 0.92);
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+.workspace-success-badge {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  border: 1px solid rgba(54, 211, 153, 0.24);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(30, 67, 55, 0.92), rgba(15, 37, 31, 0.96));
+  color: #72f0bd;
+  box-shadow:
+    0 20px 36px rgba(9, 19, 16, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.workspace-success-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.workspace-success-secondary-button {
+  min-width: 172px;
+}
+
+.workspace-success-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.workspace-success-summary-card {
+  min-height: 144px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 22px;
+}
+
+.workspace-success-summary-label {
+  color: rgba(139, 148, 167, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.workspace-success-summary-value {
+  margin-top: 14px;
+  color: #f2f5f8;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(1.75rem, 3vw, 2.2rem);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
+.workspace-success-summary-subtitle {
+  margin-top: 10px;
+  color: rgba(139, 148, 167, 0.84);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.workspace-pricing-grid,
+.workspace-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.workspace-plan-card,
+.workspace-surface-card,
+.workspace-checkout-bar {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(33, 37, 49, 0.94);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top left, rgba(114, 153, 243, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(18, 22, 34, 0.98), rgba(12, 15, 24, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 26px 56px rgba(0, 0, 0, 0.28);
+}
+
+.workspace-plan-card::before,
+.workspace-surface-card::before,
+.workspace-checkout-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, rgba(114, 153, 243, 0.06), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 24%);
+  pointer-events: none;
+}
+
+.workspace-plan-card > *,
+.workspace-surface-card > *,
+.workspace-checkout-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.workspace-plan-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 24px 24px 22px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.workspace-plan-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(114, 153, 243, 0.3);
+}
+
+.workspace-plan-card:focus-visible {
+  outline: none;
+  border-color: rgba(114, 153, 243, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 3px rgba(114, 153, 243, 0.12),
+    0 28px 60px rgba(60, 98, 212, 0.2);
+}
+
+.workspace-plan-card.selected {
+  border-color: rgba(114, 153, 243, 0.66);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(114, 153, 243, 0.18),
+    0 28px 60px rgba(60, 98, 212, 0.2);
+}
+
+.workspace-plan-badge {
+  position: absolute;
+  top: -10px;
+  right: 20px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(114, 153, 243, 0.92), rgba(158, 116, 231, 0.9));
+  color: #0a0d14;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.workspace-plan-selection {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 2;
+}
+
+.workspace-plan-card-has-badge .workspace-plan-selection {
+  top: 46px;
+}
+
+.workspace-plan-selection-ring {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(114, 153, 243, 0.28);
+  background: rgba(15, 19, 31, 0.72);
+  color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.workspace-plan-card.selected .workspace-plan-selection-ring {
+  border-color: rgba(114, 153, 243, 0.72);
+  background: linear-gradient(180deg, #87aaff 0%, #7299f3 100%);
+  color: #06080e;
+  box-shadow:
+    0 0 0 3px rgba(114, 153, 243, 0.12),
+    0 10px 18px rgba(114, 153, 243, 0.18);
+}
+
+.workspace-plan-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  margin-bottom: 18px;
+}
+
+.workspace-plan-icon-gold {
+  background: rgba(216, 178, 121, 0.14);
+  color: #d8b279;
+}
+
+.workspace-plan-icon-blue {
+  background: rgba(114, 153, 243, 0.14);
+  color: #7299f3;
+}
+
+.workspace-plan-copy h2 {
+  margin: 0;
+  color: #f2f5f8;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 2.05rem;
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.workspace-plan-copy p {
+  margin: 10px 0 0;
+  color: rgba(139, 148, 167, 0.88);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.workspace-plan-price-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.workspace-plan-price-main {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.workspace-plan-price {
+  color: #f2f5f8;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(3rem, 4vw, 3.6rem);
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+}
+
+.workspace-plan-price-currency {
+  color: rgba(242, 245, 248, 0.92);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.workspace-plan-price-cycle {
+  color: rgba(139, 148, 167, 0.82);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workspace-plan-section {
+  margin-top: 18px;
+}
+
+.workspace-plan-section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #36d399;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.workspace-plan-section-kicker-muted {
+  color: rgba(139, 148, 167, 0.72);
+}
+
+.workspace-plan-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-plan-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: rgba(242, 245, 248, 0.9);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.workspace-plan-list-positive li svg {
+  color: #36d399;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.workspace-plan-list-subtle li {
+  color: rgba(139, 148, 167, 0.88);
+}
+
+.workspace-plan-bullet {
+  width: 4px;
+  height: 4px;
+  margin-top: 9px;
+  border-radius: 999px;
+  background: rgba(139, 148, 167, 0.72);
+  flex-shrink: 0;
+}
+
+.workspace-plan-divider {
+  height: 1px;
+  margin-top: 16px;
+  background: rgba(33, 37, 49, 0.96);
+}
+
+.workspace-plan-cta {
+  margin-top: auto;
+  padding-top: 22px;
+}
+
+.workspace-plan-button {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-plan-button-selected {
+  box-shadow: 0 18px 34px rgba(114, 153, 243, 0.34);
+}
+
+.workspace-checkout-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  margin-top: 18px;
+  padding: 20px;
+}
+
+.workspace-checkout-lock {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(114, 153, 243, 0.14);
+  color: #7299f3;
+}
+
+.workspace-checkout-title {
+  color: #f2f5f8;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.workspace-checkout-subtitle {
+  margin-top: 4px;
+  color: rgba(139, 148, 167, 0.84);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.workspace-checkout-total {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+.workspace-checkout-total span,
+.workspace-checkout-total small {
+  color: rgba(139, 148, 167, 0.78);
+  font-size: 12px;
+}
+
+.workspace-checkout-total strong {
+  color: #f2f5f8;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 2.2rem;
+  font-weight: 600;
+  line-height: 0.92;
+  letter-spacing: -0.05em;
+}
+
+.workspace-checkout-total-price {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.workspace-checkout-total-currency {
+  padding-bottom: 6px;
+  color: rgba(242, 245, 248, 0.92);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.workspace-primary-button,
+.workspace-secondary-button {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 14px;
+  padding: 0 22px;
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.workspace-primary-button {
+  border: 1px solid transparent;
+  background: linear-gradient(180deg, #87aaff 0%, #7299f3 100%);
+  color: #06080e;
+  box-shadow: 0 16px 30px rgba(114, 153, 243, 0.26);
+}
+
+.workspace-primary-button:hover:not(:disabled),
+.workspace-secondary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.workspace-primary-button:hover:not(:disabled) {
+  box-shadow: 0 20px 38px rgba(114, 153, 243, 0.34);
+}
+
+.workspace-primary-button:disabled,
+.workspace-secondary-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.workspace-primary-button-wide {
+  min-width: 190px;
+}
+
+.workspace-secondary-button {
+  border: 1px solid rgba(33, 37, 49, 0.94);
+  background: rgba(23, 27, 38, 0.8);
+  color: #f2f5f8;
+}
+
+.workspace-surface-card {
+  padding: 24px;
+}
+
+.workspace-surface-head,
+.workspace-stack-row,
+.workspace-payment-status-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.workspace-surface-head {
+  margin-bottom: 18px;
+}
+
+.workspace-surface-head h2,
+.workspace-surface-head h3 {
+  margin: 8px 0 0;
+  color: #f2f5f8;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.workspace-surface-head-inline h3 {
+  font-size: 1.5rem;
+}
+
+.workspace-surface-copy,
+.workspace-empty-state,
+.workspace-stack-meta,
+.workspace-payment-note {
+  color: rgba(139, 148, 167, 0.88);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.workspace-pill {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(33, 37, 49, 0.92);
+  background: rgba(23, 27, 38, 0.7);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.workspace-pill-personal {
+  color: #d8b279;
+  border-color: rgba(216, 178, 121, 0.24);
+  background: rgba(216, 178, 121, 0.12);
+}
+
+.workspace-pill-team {
+  color: #dce6ff;
+  border-color: rgba(114, 153, 243, 0.26);
+  background: rgba(114, 153, 243, 0.12);
+}
+
+.workspace-pill-role-owner {
+  color: #dce6ff;
+  border-color: rgba(114, 153, 243, 0.26);
+  background: rgba(114, 153, 243, 0.12);
+}
+
+.workspace-pill-role-member,
+.workspace-pill-neutral {
+  color: rgba(242, 245, 248, 0.82);
+}
+
+.workspace-detail-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.workspace-overview-card {
+  padding: 18px;
+  border: 1px solid rgba(33, 37, 49, 0.9);
+  border-radius: 16px;
+  background: rgba(15, 19, 31, 0.82);
+}
+
+.workspace-overview-label {
+  display: block;
+  margin-bottom: 10px;
+  color: rgba(139, 148, 167, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.workspace-overview-card strong,
+.workspace-stack-title {
+  color: #f2f5f8;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.workspace-stack-list {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-stack-row {
+  padding: 16px 18px;
+  border: 1px solid rgba(33, 37, 49, 0.9);
+  border-radius: 16px;
+  background: rgba(15, 19, 31, 0.74);
+}
+
+.workspace-inline-section {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(33, 37, 49, 0.96);
+}
+
+.workspace-inline-section-credentials {
+  margin-top: 0;
+}
+
+.workspace-invite-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px auto;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.workspace-join-card {
+  margin-top: 18px;
+}
+
+.workspace-join-form {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.workspace-form-group {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-form-group label {
+  color: rgba(139, 148, 167, 0.96);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.workspace-form-group input,
+.workspace-form-group select {
+  min-height: 48px;
+  width: 100%;
+  padding: 0 14px;
+  border: 1px solid rgba(33, 37, 49, 0.92);
+  border-radius: 12px;
+  background: rgba(23, 27, 38, 0.76);
+  color: #f2f5f8;
+}
+
+.workspace-form-group input:focus,
+.workspace-form-group select:focus {
+  outline: none;
+  border-color: rgba(114, 153, 243, 0.64);
+  box-shadow: 0 0 0 3px rgba(114, 153, 243, 0.16);
+}
+
+.workspace-feedback {
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.workspace-feedback-error {
+  margin-top: 16px;
+  border-color: rgba(225, 71, 71, 0.32);
+  background: rgba(225, 71, 71, 0.12);
+  color: #f8fafb;
+}
+
+.workspace-feedback-success {
+  margin-top: 16px;
+  border-color: rgba(54, 211, 153, 0.28);
+  background: rgba(54, 211, 153, 0.12);
+  color: #d7fff0;
+}
+
+.workspace-credential-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.workspace-credential-card {
+  padding: 16px 18px;
+  border: 1px solid rgba(33, 37, 49, 0.92);
+  border-radius: 16px;
+  background: rgba(15, 19, 31, 0.74);
+}
+
+.workspace-credential-label {
+  display: block;
+  color: rgba(139, 148, 167, 0.86);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.workspace-credential-value {
+  display: block;
+  margin-top: 12px;
+  color: #f2f5f8;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.workspace-credential-value-secret {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  word-break: break-word;
+}
+
+.workspace-credential-meta {
+  display: block;
+  margin-top: 8px;
+  color: rgba(139, 148, 167, 0.76);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.workspace-credential-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.workspace-payment-wait-shell {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 34px 36px 30px;
+  text-align: center;
+}
+
+.workspace-payment-failure-shell {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 34px 36px 32px;
+  text-align: center;
+}
+
+.workspace-payment-timeout-shell {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 34px 36px 32px;
+  text-align: center;
+}
+
+.workspace-payment-failure-orb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  border: 1px solid rgba(225, 71, 71, 0.24);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(60, 18, 24, 0.96), rgba(29, 11, 15, 0.98));
+  color: #ffb0b0;
+  box-shadow:
+    0 24px 42px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.workspace-payment-timeout-orb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  border: 1px solid rgba(238, 196, 104, 0.24);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(66, 49, 16, 0.96), rgba(30, 24, 10, 0.98));
+  color: #f6d58f;
+  box-shadow:
+    0 24px 42px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.workspace-payment-timeout-orb::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 26px;
+  border: 1px solid rgba(238, 196, 104, 0.18);
+  animation: workspace-payment-timeout-pulse 1.9s ease-in-out infinite;
+}
+
+.workspace-payment-failure-orb::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 26px;
+  border: 1px solid rgba(225, 71, 71, 0.18);
+  animation: workspace-payment-failure-pulse 1.8s ease-in-out infinite;
+}
+
+.workspace-payment-failure-title {
+  max-width: 580px;
+  margin: 18px auto 0;
+  color: #f7e7ea;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2.6rem, 5vw, 3.8rem);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+  text-wrap: balance;
+}
+
+.workspace-payment-timeout-title {
+  max-width: 600px;
+  margin: 18px auto 0;
+  color: #f5ecda;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2.55rem, 5vw, 3.7rem);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+  text-wrap: balance;
+}
+
+.workspace-payment-failure-copy {
+  max-width: 560px;
+  margin: 18px auto 0;
+  color: rgba(190, 167, 172, 0.92);
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+.workspace-payment-timeout-copy {
+  max-width: 560px;
+  margin: 18px auto 0;
+  color: rgba(204, 192, 164, 0.92);
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+.workspace-payment-failure-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 560px;
+  margin: 22px auto 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(225, 71, 71, 0.24);
+  border-radius: 16px;
+  background: rgba(225, 71, 71, 0.1);
+  color: #ffd9d9;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.workspace-payment-timeout-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 560px;
+  margin: 22px auto 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(238, 196, 104, 0.22);
+  border-radius: 16px;
+  background: rgba(238, 196, 104, 0.1);
+  color: #fbe6b4;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.workspace-payment-failure-banner-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ff7f7f;
+  box-shadow: 0 0 12px rgba(255, 127, 127, 0.55);
+  flex-shrink: 0;
+}
+
+.workspace-payment-timeout-banner-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #f6d58f;
+  box-shadow: 0 0 12px rgba(246, 213, 143, 0.55);
+  flex-shrink: 0;
+}
+
+.workspace-payment-failure-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+.workspace-payment-wait-orb {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  border: 1px solid rgba(114, 153, 243, 0.18);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(23, 31, 52, 0.96), rgba(14, 19, 32, 0.98));
+  box-shadow:
+    0 24px 42px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.workspace-payment-wait-spinner {
+  width: 22px;
+  height: 22px;
+  display: block;
+  border: 2px solid rgba(114, 153, 243, 0.2);
+  border-top-color: rgba(169, 189, 255, 0.92);
+  border-radius: 999px;
+  animation: workspace-spin 1.1s linear infinite;
+}
+
+.workspace-payment-wait-title {
+  max-width: 580px;
+  margin: 18px auto 0;
+  color: #ece8fb;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2.8rem, 5vw, 4rem);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+  text-wrap: balance;
+}
+
+.workspace-payment-wait-copy {
+  max-width: 560px;
+  margin: 18px auto 0;
+  color: rgba(139, 148, 167, 0.9);
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+.workspace-payment-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 30px;
+}
+
+.workspace-payment-progress-head span,
+.workspace-payment-meta-label {
+  color: rgba(139, 148, 167, 0.78);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.workspace-payment-progress-head strong {
+  color: rgba(242, 245, 248, 0.9);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-payment-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 10px;
+  margin-top: 10px;
+  border: 1px solid rgba(33, 37, 49, 0.96);
+  border-radius: 999px;
+  background: rgba(13, 18, 30, 0.96);
+}
+
+.workspace-payment-progress-indicator {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: -28%;
+  width: 42%;
+  border-radius: 999px;
+  animation: workspace-payment-slide 1.9s ease-in-out infinite;
+  box-shadow: 0 0 24px rgba(114, 153, 243, 0.26);
+}
+
+.workspace-payment-progress-indicator-pending {
+  background: linear-gradient(90deg, rgba(114, 153, 243, 0.92), rgba(157, 116, 231, 0.9));
+}
+
+.workspace-payment-progress-indicator-processing {
+  background: linear-gradient(90deg, rgba(106, 177, 255, 0.96), rgba(114, 153, 243, 0.92));
+}
+
+.workspace-payment-progress-indicator-success {
+  left: 0;
+  width: 100%;
+  animation: none;
+  background: linear-gradient(90deg, rgba(54, 211, 153, 0.96), rgba(96, 230, 178, 0.88));
+}
+
+.workspace-payment-progress-indicator-error {
+  left: 0;
+  width: 100%;
+  animation: none;
+  background: linear-gradient(90deg, rgba(225, 71, 71, 0.96), rgba(250, 121, 121, 0.88));
+}
+
+.workspace-payment-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.workspace-payment-meta-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid rgba(33, 37, 49, 0.9);
+  border-radius: 16px;
+  background: rgba(15, 19, 31, 0.74);
+  text-align: left;
+}
+
+.workspace-payment-meta-value {
+  color: #f2f5f8;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.workspace-payment-meta-card small {
+  color: rgba(139, 148, 167, 0.78);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-payment-status-badge {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.workspace-payment-status-badge-pending {
+  color: #f2d37c;
+  background: rgba(210, 160, 44, 0.12);
+  border: 1px solid rgba(210, 160, 44, 0.2);
+}
+
+.workspace-payment-status-badge-processing {
+  color: #dce6ff;
+  background: rgba(114, 153, 243, 0.14);
+  border: 1px solid rgba(114, 153, 243, 0.22);
+}
+
+.workspace-payment-status-badge-success {
+  color: #cbffeb;
+  background: rgba(54, 211, 153, 0.14);
+  border: 1px solid rgba(54, 211, 153, 0.22);
+}
+
+.workspace-payment-status-badge-error {
+  color: #ffd4d4;
+  background: rgba(225, 71, 71, 0.14);
+  border: 1px solid rgba(225, 71, 71, 0.24);
+}
+
+.workspace-payment-status-badge-warning {
+  color: #fbe6b4;
+  background: rgba(238, 196, 104, 0.14);
+  border: 1px solid rgba(238, 196, 104, 0.24);
+}
+
+.workspace-payment-footnote {
+  margin-top: 20px;
+  color: rgba(139, 148, 167, 0.78);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@keyframes workspace-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes workspace-payment-slide {
+  0% {
+    left: -28%;
+  }
+
+  50% {
+    left: 40%;
+  }
+
+  100% {
+    left: 100%;
+  }
+}
+
+@keyframes workspace-payment-failure-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.98);
+  }
+
+  50% {
+    opacity: 0.72;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes workspace-payment-timeout-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.98);
+  }
+
+  50% {
+    opacity: 0.66;
+    transform: scale(1.02);
+  }
+}
+
+@media (max-width: 1080px) {
+  .workspace-pricing-grid,
+  .workspace-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-success-summary-grid,
+  .workspace-payment-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-checkout-bar {
+    grid-template-columns: 1fr;
+    justify-items: flex-start;
+  }
+
+  .workspace-checkout-total {
+    justify-items: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  .workspace-shell {
+    padding-inline: 18px;
+  }
+
+  .workspace-shell-topbar,
+  .workspace-surface-head,
+  .workspace-stack-row,
+  .workspace-payment-status-row,
+  .workspace-payment-progress-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .workspace-shell-steps {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .workspace-shell-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .workspace-overview-grid,
+  .workspace-invite-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-shell {
+    padding: 14px;
+  }
+
+  .workspace-pricing-hero,
+  .workspace-success-hero,
+  .workspace-payment-hero {
+    margin-bottom: 28px;
+  }
+
+  .workspace-hero-title {
+    font-size: clamp(2.4rem, 12vw, 3.2rem);
+  }
+
+  .workspace-plan-card,
+  .workspace-surface-card,
+  .workspace-checkout-bar {
+    padding: 20px;
+    border-radius: 18px;
+  }
+
+  .workspace-plan-copy h2,
+  .workspace-surface-head h2,
+  .workspace-surface-head h3 {
+    font-size: 1.75rem;
+  }
+
+  .workspace-plan-badge {
+    position: static;
+    width: fit-content;
+    margin-bottom: 14px;
+  }
+
+  .workspace-plan-selection {
+    top: 20px;
+    right: 18px;
+  }
+
+  .workspace-plan-card-has-badge .workspace-plan-selection {
+    top: 52px;
+  }
+
+  .workspace-shell-return-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .workspace-success-actions {
+    flex-direction: column;
+  }
+
+  .workspace-success-actions .workspace-primary-button,
+  .workspace-success-actions .workspace-secondary-button {
+    width: 100%;
+  }
+
+  .workspace-credential-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-join-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-payment-wait-shell {
+    padding: 24px 20px 22px;
+  }
+
+  .workspace-payment-failure-shell {
+    padding: 24px 20px 24px;
+  }
+
+  .workspace-payment-timeout-shell {
+    padding: 24px 20px 24px;
+  }
+
+  .workspace-payment-progress-head {
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-payment-wait-spinner,
+  .workspace-payment-progress-indicator,
+  .workspace-payment-failure-orb::after,
+  .workspace-payment-timeout-orb::after {
+    animation: none;
+  }
+}

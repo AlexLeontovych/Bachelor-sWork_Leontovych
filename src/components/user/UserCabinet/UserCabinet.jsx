@@ -1,11 +1,58 @@
-import { useState, useEffect } from 'react'
-import { getCurrentProfile, signOut, updatePassword, isAdmin, banUser, unbanUser } from '../../../services/authService'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Boxes,
+  Building2,
+  FolderKanban,
+  Hammer,
+  Rocket,
+  Settings,
+  Shield,
+  User as UserIcon,
+  Users
+} from 'lucide-react'
+import { getCurrentProfile, banUser, unbanUser } from '../../../services/authService'
+import { getCurrentWorkspaceProfile } from '../../../services/workspaceService'
+import {
+  getWorkflowTeamRole,
+  getWorkflowTeamRoleLabel,
+  normalizeProjectStatus
+} from '../../shared/utils/projectWorkflow'
 import { supabase } from '../../../lib/supabase'
+import PageHeader from '../../shared/ui/PageHeader'
+import MetricCard from '../../shared/ui/MetricCard'
+import TabBar from '../../shared/ui/TabBar'
+import WorkspaceSwitcher from '../../shared/ui/WorkspaceSwitcher'
+import ProfileTab from './tabs/ProfileTab'
+import WorkspaceTab from './tabs/WorkspaceTab'
+import ProjectsTab from './tabs/ProjectsTab'
+import UsersTab from './tabs/UsersTab'
+import MemberProfileTab from './tabs/MemberProfileTab'
 import './UserCabinet.css'
 
-const UserCabinet = ({ 
-  projects: projectsFromProps, 
-  onBack, 
+const UserCabinet = ({
+  projects: projectsFromProps,
+  activeWorkspace,
+  accessibleWorkspaces = [],
+  workspaceMembers = [],
+  workspaceInvites = [],
+  workspaceJoinCredentials = null,
+  workspaceJoinSecret = null,
+  initialActiveTab = 'profile',
+  initialSelectedMember = null,
+  notifications = [],
+  unreadNotificationCount = 0,
+  onNotificationSelect,
+  onMarkAllNotificationsRead,
+  onClearNotifications,
+  onWorkspaceChange,
+  onOpenWorkspaceJoin,
+  onCreateWorkspaceInvite,
+  onRevokeWorkspaceInvite,
+  onUpdateWorkspaceMemberRole,
+  onRemoveWorkspaceMember,
+  onRotateWorkspaceCredentials,
+  onRefreshWorkspaceData,
+  onBack,
   onSignOut,
   onEditProject,
   onProjectPreview,
@@ -15,158 +62,211 @@ const UserCabinet = ({
   const [profile, setProfile] = useState(null)
   const [projects, setProjects] = useState(projectsFromProps || [])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('profile') // 'profile', 'projects' или 'users'
-  const [isAdminUser, setIsAdminUser] = useState(false)
+  const [activeTab, setActiveTab] = useState(initialActiveTab)
   const [allUsers, setAllUsers] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [editingUserId, setEditingUserId] = useState(null)
   const [isBanning, setIsBanning] = useState(false)
-  
-  // Состояния для смены пароля
+  const [workspaceInviteEmail, setWorkspaceInviteEmail] = useState('')
+  const [workspaceInviteRole, setWorkspaceInviteRole] = useState('developer')
+  const [workspaceInviteError, setWorkspaceInviteError] = useState('')
+  const [workspaceInviteSuccess, setWorkspaceInviteSuccess] = useState('')
+  const [isWorkspaceInviteLoading, setIsWorkspaceInviteLoading] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
+  const [selectedWorkspaceMember, setSelectedWorkspaceMember] = useState(null)
+  const [selectedWorkspaceMemberProjects, setSelectedWorkspaceMemberProjects] = useState([])
+  const [loadingSelectedWorkspaceMemberProjects, setLoadingSelectedWorkspaceMemberProjects] = useState(false)
+  const contentRef = useRef(null)
 
   useEffect(() => {
-    loadData()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    void loadData()
+  }, [activeWorkspace?.workspaceId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    // Обновляем проекты, если они изменились в пропсах
     if (projectsFromProps && Array.isArray(projectsFromProps)) {
       setProjects(projectsFromProps)
     }
   }, [projectsFromProps])
 
+  useEffect(() => {
+    if (initialActiveTab) {
+      setActiveTab(initialActiveTab)
+    }
+  }, [initialActiveTab])
+
+  useEffect(() => {
+    setSelectedWorkspaceMember(null)
+    setSelectedWorkspaceMemberProjects([])
+  }, [activeWorkspace?.workspaceId])
+
+  useEffect(() => {
+    if ((!activeWorkspace || activeWorkspace.workspaceType === 'personal') && activeTab === 'workspace') {
+      setActiveTab('profile')
+    }
+  }, [activeTab, activeWorkspace])
+
+  useEffect(() => {
+    if (profile?.role !== 'admin' && activeTab === 'users') {
+      setActiveTab('profile')
+    }
+  }, [activeTab, profile?.role])
+
+  useEffect(() => {
+    if (activeTab === 'member' && !selectedWorkspaceMember) {
+      setActiveTab('workspace')
+    }
+  }, [activeTab, selectedWorkspaceMember])
+
+  useEffect(() => {
+    if (loading || !contentRef.current) {
+      return
+    }
+
+    const scrollFrame = window.requestAnimationFrame(() => {
+      contentRef.current?.scrollIntoView({ block: 'start', behavior: 'auto' })
+    })
+
+    return () => window.cancelAnimationFrame(scrollFrame)
+  }, [loading, activeTab])
+
   const loadData = async () => {
     try {
       setLoading(true)
-      
-      // Загружаем профиль (это критично, должно быть выполнено)
-      try {
-        const userProfile = await getCurrentProfile()
-        setProfile(userProfile)
-        
-        // Проверяем, является ли пользователь администратором
-        try {
-          const adminStatus = await isAdmin()
-          setIsAdminUser(adminStatus)
-        } catch (error) {
-          console.error('Error checking admin status:', error)
-          setIsAdminUser(false)
-        }
 
-        // Если пользователь администратор, загружаем список всех пользователей
+      try {
+        const userProfile = activeWorkspace?.workspaceId
+          ? await getCurrentWorkspaceProfile(activeWorkspace.workspaceId)
+          : await getCurrentProfile()
+
+        setProfile(userProfile)
+
         if (userProfile?.role === 'admin') {
-          try {
-            await loadAllUsers()
-          } catch (error) {
-            console.error('Error loading users:', error)
-            // Продолжаем загрузку даже если не удалось загрузить пользователей
-          }
+          await loadAllUsers()
         }
       } catch (error) {
-        console.error('Error loading profile:', error)
-        // Если не удалось загрузить профиль, все равно показываем интерфейс
+        console.error('Error loading cabinet profile:', error)
         setProfile(null)
       }
 
-      // В профиле показываем только проекты текущего пользователя
-      // Загружаем только свои проекты из БД
       try {
         const { getUserProjects, transformProjectFromDB } = await import('../../../services/projectService')
-        const projectsData = await getUserProjects()
-        const transformedProjects = projectsData.map(transformProjectFromDB)
-        setProjects(transformedProjects)
+        const projectsData = activeWorkspace?.workspaceId
+          ? await getUserProjects(activeWorkspace.workspaceId)
+          : []
+
+        setProjects((projectsData || []).map(transformProjectFromDB))
       } catch (error) {
-        console.error('Error loading user projects:', error)
-        // Устанавливаем пустой массив даже при ошибке, чтобы не блокировать загрузку
+        console.error('Error loading cabinet projects:', error)
         setProjects([])
       }
     } catch (error) {
-      console.error('Unexpected error loading data:', error)
-      // Устанавливаем пустые значения при ошибке, чтобы не блокировать интерфейс
+      console.error('Unexpected cabinet loading error:', error)
       setProjects([])
     } finally {
-      // Всегда снимаем флаг загрузки
       setLoading(false)
     }
   }
 
   const loadAllUsers = async () => {
-    // Предотвращаем множественные одновременные загрузки
     if (loadingUsers) {
-      console.log('[DB DEBUG] Загрузка пользователей уже выполняется, пропускаем...')
       return
     }
-    
+
     try {
       setLoadingUsers(true)
-      console.log('[DB DEBUG] Загрузка всех пользователей из таблицы profiles...')
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false })
 
-      console.log('[DB DEBUG] Результат загрузки пользователей:', {
-        data: data ? `${data.length} пользователей` : 'null',
-        error: error ? {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint
-        } : 'null'
-      })
-
       if (error) {
-        console.error('[DB DEBUG] Ошибка загрузки пользователей:', error)
         throw error
       }
-      
-      console.log('[DB DEBUG] Пользователи успешно загружены:', data?.map(u => ({ id: u.id, email: u.email, banned: u.banned })))
+
       setAllUsers(data || [])
     } catch (error) {
-      console.error('[DB DEBUG] Критическая ошибка загрузки пользователей:', error)
-      // Не выбрасываем ошибку дальше, чтобы не блокировать UI
+      console.error('Error loading users:', error)
     } finally {
       setLoadingUsers(false)
     }
   }
 
+  const refreshOwnProfile = async () => {
+    const updatedProfile = activeWorkspace?.workspaceId
+      ? await getCurrentWorkspaceProfile(activeWorkspace.workspaceId)
+      : await getCurrentProfile()
+
+    setProfile(updatedProfile)
+  }
+
   const handleRoleChange = async (userId, newRole) => {
     try {
+      const nextTeamRole = newRole === 'admin'
+        ? null
+        : (allUsers.find((user) => user.id === userId)?.team_role || 'developer')
+
       const { error } = await supabase
         .from('profiles')
-        .update({ role: newRole })
+        .update({
+          role: newRole,
+          team_role: nextTeamRole
+        })
         .eq('id', userId)
 
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
-      // Обновляем локальный список пользователей
-      setAllUsers(prev => prev.map(user => 
-        user.id === userId ? { ...user, role: newRole } : user
-      ))
+      setAllUsers((previousUsers) => previousUsers.map((user) => (
+        user.id === userId
+          ? { ...user, role: newRole, team_role: nextTeamRole }
+          : user
+      )))
 
-      // Если изменили свою роль, обновляем профиль
       if (userId === profile?.id) {
-        const updatedProfile = await getCurrentProfile()
-        setProfile(updatedProfile)
+        await refreshOwnProfile()
       }
     } catch (error) {
-      console.error('Error updating role:', error)
-      alert('Error changing role: ' + error.message)
+      console.error('Error updating access role:', error)
+      alert(`Error changing role: ${error.message}`)
     }
   }
 
-  const handlePasswordChange = async (e) => {
-    e.preventDefault()
+  const handleTeamRoleChange = async (userId, newTeamRole) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ team_role: newTeamRole })
+        .eq('id', userId)
+
+      if (error) {
+        throw error
+      }
+
+      setAllUsers((previousUsers) => previousUsers.map((user) => (
+        user.id === userId ? { ...user, team_role: newTeamRole } : user
+      )))
+
+      if (userId === profile?.id) {
+        await refreshOwnProfile()
+      }
+    } catch (error) {
+      console.error('Error updating team role:', error)
+      alert(`Error changing team role: ${error.message}`)
+    }
+  }
+
+  const handlePasswordChange = async (event) => {
+    event.preventDefault()
     setPasswordError('')
     setPasswordSuccess('')
 
-    // Валидация
     if (!currentPassword || !newPassword || !confirmPassword) {
       setPasswordError('Please fill in all fields')
       return
@@ -189,10 +289,9 @@ const UserCabinet = ({
 
     try {
       setChangingPassword(true)
-      
-      // Проверяем текущий пароль, пытаясь войти
+
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: profile.email,
+        email: profile?.email,
         password: currentPassword
       })
 
@@ -201,434 +300,393 @@ const UserCabinet = ({
         return
       }
 
-      // Обновляем пароль
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       })
 
-      if (updateError) throw updateError
+      if (updateError) {
+        throw updateError
+      }
 
       setPasswordSuccess('Password changed successfully!')
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
     } catch (error) {
+      console.error('Error changing password:', error)
       setPasswordError(error.message || 'Error changing password')
     } finally {
       setChangingPassword(false)
     }
   }
 
+  const handleWorkspaceInviteSubmit = async (event) => {
+    event.preventDefault()
+    setWorkspaceInviteError('')
+    setWorkspaceInviteSuccess('')
+
+    if (!onCreateWorkspaceInvite) {
+      setWorkspaceInviteError('Workspace invite management is unavailable.')
+      return
+    }
+
+    try {
+      setIsWorkspaceInviteLoading(true)
+      await onCreateWorkspaceInvite(workspaceInviteEmail, workspaceInviteRole)
+
+      if (onRefreshWorkspaceData) {
+        await onRefreshWorkspaceData()
+      }
+
+      setWorkspaceInviteEmail('')
+      setWorkspaceInviteRole('developer')
+      setWorkspaceInviteSuccess('Invitation saved successfully.')
+    } catch (error) {
+      console.error('Error creating workspace invite:', error)
+      setWorkspaceInviteError(error.message || 'Unable to create the workspace invite.')
+    } finally {
+      setIsWorkspaceInviteLoading(false)
+    }
+  }
+
+  const handleWorkspaceInviteRevoke = async (inviteId) => {
+    if (!onRevokeWorkspaceInvite) {
+      return
+    }
+
+    try {
+      setWorkspaceInviteError('')
+      setWorkspaceInviteSuccess('')
+      await onRevokeWorkspaceInvite(inviteId)
+
+      if (onRefreshWorkspaceData) {
+        await onRefreshWorkspaceData()
+      }
+    } catch (error) {
+      console.error('Error revoking workspace invite:', error)
+      setWorkspaceInviteError(error.message || 'Unable to revoke the workspace invite.')
+    }
+  }
+
+  const handleToggleBan = async (user) => {
+    if (isBanning) {
+      return
+    }
+
+    const action = user.banned ? 'unban' : 'ban'
+    const confirmationAccepted = window.confirm(`Are you sure you want to ${action} account ${user.email || 'this user'}?`)
+
+    if (!confirmationAccepted) {
+      return
+    }
+
+    try {
+      setIsBanning(true)
+
+      if (user.banned) {
+        await unbanUser(user.id)
+      } else {
+        await banUser(user.id)
+      }
+
+      const nextBannedState = !user.banned
+      setAllUsers((previousUsers) => previousUsers.map((listedUser) => (
+        listedUser.id === user.id ? { ...listedUser, banned: nextBannedState } : listedUser
+      )))
+
+      void loadAllUsers()
+      alert(`User ${user.banned ? 'unbanned' : 'banned'}`)
+    } catch (error) {
+      console.error('Error changing user ban state:', error)
+      alert(`Error: ${error.message}`)
+    } finally {
+      setIsBanning(false)
+    }
+  }
+
+  const handleProjectRemovedLocally = (projectId) => {
+    setProjects((previousProjects) => previousProjects.filter((project) => String(project.id) !== String(projectId)))
+  }
+
+  const openWorkspaceMemberProfile = async (member) => {
+    const memberUserId = member.userId || member.id
+
+    if (!memberUserId) {
+      alert('Unable to open this member profile: missing user identifier.')
+      return
+    }
+
+    setSelectedWorkspaceMember({
+      id: memberUserId,
+      email: member.email,
+      full_name: member.fullName,
+      role: member.profileRole,
+      team_role: member.workflowRole,
+      workflowRole: member.workflowRole,
+      membershipRole: member.membershipRole,
+      created_at: member.created_at
+    })
+    setSelectedWorkspaceMemberProjects([])
+    setActiveTab('member')
+
+    try {
+      setLoadingSelectedWorkspaceMemberProjects(true)
+      const { getWorkspaceMemberProjects, transformProjectFromDB } = await import('../../../services/projectService')
+      const memberProjects = activeWorkspace?.workspaceId
+        ? await getWorkspaceMemberProjects(activeWorkspace.workspaceId, memberUserId)
+        : []
+
+      setSelectedWorkspaceMemberProjects((memberProjects || []).map(transformProjectFromDB))
+    } catch (error) {
+      console.error('Error loading selected member projects:', error)
+      setSelectedWorkspaceMemberProjects([])
+      alert(error.message || 'Unable to load this member projects.')
+    } finally {
+      setLoadingSelectedWorkspaceMemberProjects(false)
+    }
+  }
+
+  const handleViewWorkspaceMember = (member) => {
+    void openWorkspaceMemberProfile(member)
+  }
+
+  const handleViewUser = (user) => {
+    void openWorkspaceMemberProfile({
+      userId: user.id,
+      id: user.id,
+      email: user.email,
+      fullName: user.full_name,
+      profileRole: user.role,
+      workflowRole: user.team_role,
+      membershipRole: user.role === 'admin' ? 'owner' : 'member',
+      created_at: user.created_at
+    })
+  }
+
+  useEffect(() => {
+    if (initialActiveTab !== 'member' || !initialSelectedMember) {
+      return
+    }
+
+    void openWorkspaceMemberProfile(initialSelectedMember)
+  }, [initialActiveTab, initialSelectedMember, activeWorkspace?.workspaceId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const cabinetStats = useMemo(() => {
+    return projects.reduce((summary, project) => {
+      const normalizedStatus = normalizeProjectStatus(project.status)
+
+      summary.total += 1
+      summary[normalizedStatus] += 1
+
+      return summary
+    }, {
+      total: 0,
+      development: 0,
+      qa: 0,
+      production: 0
+    })
+  }, [projects])
+
+  const workflowRole = getWorkflowTeamRole(profile)
+  const workflowRoleLabel = getWorkflowTeamRoleLabel(profile)
+  const isSoloWorkspace = activeWorkspace?.workspaceType === 'personal'
+  const headerRole = isSoloWorkspace ? null : workflowRole
+  const headerRoleLabel = isSoloWorkspace ? null : workflowRoleLabel
+  const tabItems = [
+    { id: 'profile', label: 'Profile', icon: UserIcon },
+    activeWorkspace && activeWorkspace.workspaceType !== 'personal'
+      ? { id: 'workspace', label: 'Workspace', icon: Building2 }
+      : null,
+    { id: 'projects', label: `Projects (${projects.length})`, icon: FolderKanban },
+    selectedWorkspaceMember
+      ? { id: 'member', label: 'Member profile', icon: UserIcon }
+      : null,
+    profile?.role === 'admin'
+      ? { id: 'users', label: `User Management (${allUsers.length})`, icon: Shield }
+      : null
+  ].filter(Boolean)
+
   if (loading) {
     return (
       <div className="user-cabinet-loading">
-        Loading...
+        <div className="app-loading-panel">
+          <div className="app-loading-eyebrow">Workspace profile</div>
+          <h1 className="app-loading-title">Loading your operating profile</h1>
+          <p className="app-loading-copy">
+            We are preparing your profile, permissions, and project activity.
+          </p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="user-cabinet">
-      <div className="user-cabinet-header">
-        <button 
-          className="user-cabinet-back" 
-          onClick={() => {
-            // Всегда разрешаем выход, даже во время операций
-            onBack()
-          }}
-          style={{ 
-            opacity: (isBanning || loadingUsers) ? 0.7 : 1
-          }}
-        >
-          ← Back {(isBanning || loadingUsers) && '...'}
-        </button>
-        <h1 className="user-cabinet-title">User Cabinet</h1>
-      </div>
-
-      <div className="user-cabinet-tabs">
-        <button
-          className={`user-cabinet-tab ${activeTab === 'profile' ? 'active' : ''}`}
-          onClick={() => setActiveTab('profile')}
-        >
-          Profile
-        </button>
-        <button
-          className={`user-cabinet-tab ${activeTab === 'projects' ? 'active' : ''}`}
-          onClick={() => setActiveTab('projects')}
-        >
-          My Projects ({projects.length})
-        </button>
-        {profile?.role === 'admin' && (
+    <div className="user-cabinet-view">
+      <PageHeader
+        backLabel="Return to projects"
+        onBack={onBack}
+        identity={{
+          name: profile?.full_name || profile?.email || 'Workspace user',
+          email: profile?.full_name || profile?.email || 'No profile name',
+          role: headerRole,
+          roleLabel: headerRoleLabel
+        }}
+        workspaceSwitcher={activeWorkspace && accessibleWorkspaces.length > 1 ? (
+          <WorkspaceSwitcher
+            workspaces={accessibleWorkspaces}
+            active={activeWorkspace.workspaceId}
+            onChange={onWorkspaceChange}
+          />
+        ) : null}
+        notifications={notifications}
+        unreadNotificationCount={unreadNotificationCount}
+        onLogoClick={onBack}
+        onNotificationSelect={onNotificationSelect}
+        onMarkAllNotificationsRead={onMarkAllNotificationsRead}
+        onClearNotifications={onClearNotifications}
+        searchPlaceholder={null}
+        actions={onOpenWorkspaceJoin ? (
           <button
-            className={`user-cabinet-tab ${activeTab === 'users' ? 'active' : ''}`}
-            onClick={() => setActiveTab('users')}
+            type="button"
+            className="ui-page-header__workspace-settings-button ui-page-header__workspace-settings-button--join"
+            onClick={onOpenWorkspaceJoin}
+            aria-label="Join a team workspace"
+            title="Join a team workspace"
           >
-            User Management ({allUsers.length})
+            <Settings size={16} />
           </button>
-        )}
-      </div>
+        ) : null}
+      />
 
-      <div className="user-cabinet-content">
-        {activeTab === 'profile' && (
-          <div className="user-cabinet-section">
-            <div className="user-cabinet-info">
-              <div className="user-info-item">
-                <label className="user-info-label">Email:</label>
-                <span className="user-info-value">{profile?.email || 'Not specified'}</span>
-              </div>
-              <div className="user-info-item">
-                <label className="user-info-label">Name:</label>
-                <span className="user-info-value">{profile?.full_name || 'Not specified'}</span>
-              </div>
-              <div className="user-info-item">
-                <label className="user-info-label">Role:</label>
-                <span className={`user-info-value user-role-badge ${profile?.role === 'admin' ? 'admin' : 'user'}`}>
-                  {profile?.role === 'admin' ? 'Admin' : 'User'}
-                </span>
-              </div>
-              <div className="user-info-item">
-                <label className="user-info-label">Registration Date:</label>
-                <span className="user-info-value">
-                  {profile?.created_at 
-                    ? new Date(profile.created_at).toLocaleDateString('en-US')
-                    : 'Not specified'}
-                </span>
-              </div>
-            </div>
+      <div className="user-cabinet app-page">
+        <div className="app-shell user-cabinet-shell">
+          <section className="user-cabinet-metrics">
+            <MetricCard
+              label="Assigned projects"
+              value={cabinetStats.total}
+              hint="Projects currently visible in your cabinet."
+              icon={Boxes}
+              tone="blue"
+            />
+            <MetricCard
+              label="In development"
+              value={cabinetStats.development}
+              hint="Creatives still being actively built."
+              icon={Hammer}
+              tone="violet"
+            />
+            <MetricCard
+              label="In QA"
+              value={cabinetStats.qa}
+              hint="Projects waiting for verification or feedback."
+              icon={Users}
+              tone="gold"
+            />
+            <MetricCard
+              label="Production"
+              value={cabinetStats.production}
+              hint="Released or finalized project deliveries."
+              icon={Rocket}
+              tone="emerald"
+            />
+          </section>
 
-            <div className="user-cabinet-password-section">
-              <h2 className="user-cabinet-section-title">Change Password</h2>
-              <form className="user-password-form" onSubmit={handlePasswordChange}>
-                <div className="user-form-group">
-                  <label htmlFor="currentPassword" className="user-form-label">
-                    Current Password
-                  </label>
-                  <input
-                    id="currentPassword"
-                    type="password"
-                    className="user-form-input"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    placeholder="Enter current password"
-                    disabled={changingPassword}
-                  />
-                </div>
+          <section className="user-cabinet-tabs-wrap">
+            <TabBar
+              items={tabItems}
+              active={activeTab}
+              onChange={setActiveTab}
+            />
+          </section>
 
-                <div className="user-form-group">
-                  <label htmlFor="newPassword" className="user-form-label">
-                    New Password
-                  </label>
-                  <input
-                    id="newPassword"
-                    type="password"
-                    className="user-form-input"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Minimum 6 characters"
-                    minLength={6}
-                    disabled={changingPassword}
-                  />
-                </div>
+          <section ref={contentRef} className="user-cabinet-content">
+            {activeTab === 'profile' && (
+              <ProfileTab
+                profile={profile}
+                projects={projects}
+                workflowRoleLabel={workflowRoleLabel}
+                currentPassword={currentPassword}
+                newPassword={newPassword}
+                confirmPassword={confirmPassword}
+                changingPassword={changingPassword}
+                passwordError={passwordError}
+                passwordSuccess={passwordSuccess}
+                onCurrentPasswordChange={setCurrentPassword}
+                onNewPasswordChange={setNewPassword}
+                onConfirmPasswordChange={setConfirmPassword}
+                onSubmit={handlePasswordChange}
+                onSignOut={onSignOut}
+              />
+            )}
 
-                <div className="user-form-group">
-                  <label htmlFor="confirmPassword" className="user-form-label">
-                    Confirm New Password
-                  </label>
-                  <input
-                    id="confirmPassword"
-                    type="password"
-                    className="user-form-input"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Repeat new password"
-                    minLength={6}
-                    disabled={changingPassword}
-                  />
-                </div>
+            {activeTab === 'workspace' && activeWorkspace && (
+              <WorkspaceTab
+                activeWorkspace={activeWorkspace}
+                accessibleWorkspaces={accessibleWorkspaces}
+                workspaceMembers={workspaceMembers}
+                workspaceInvites={workspaceInvites}
+                workspaceJoinCredentials={workspaceJoinCredentials}
+                workspaceJoinSecret={workspaceJoinSecret}
+                workspaceInviteEmail={workspaceInviteEmail}
+                workspaceInviteRole={workspaceInviteRole}
+                workspaceInviteError={workspaceInviteError}
+                workspaceInviteSuccess={workspaceInviteSuccess}
+                isWorkspaceInviteLoading={isWorkspaceInviteLoading}
+                onWorkspaceChange={onWorkspaceChange}
+                onRotateWorkspaceCredentials={onRotateWorkspaceCredentials}
+                onUpdateMemberRole={onUpdateWorkspaceMemberRole}
+                onRemoveMember={onRemoveWorkspaceMember}
+                onViewMember={handleViewWorkspaceMember}
+                onInviteEmailChange={setWorkspaceInviteEmail}
+                onInviteRoleChange={setWorkspaceInviteRole}
+                onInviteSubmit={handleWorkspaceInviteSubmit}
+                onInviteRevoke={handleWorkspaceInviteRevoke}
+              />
+            )}
 
-                {passwordError && (
-                  <div className="user-form-error">
-                    {passwordError}
-                  </div>
-                )}
+            {activeTab === 'projects' && (
+              <ProjectsTab
+                projects={projects}
+                profile={profile}
+                onBack={onBack}
+                onEditProject={onEditProject}
+                onProjectPreview={onProjectPreview}
+                onProjectExport={onProjectExport}
+                onDeleteProject={onDeleteProject}
+                onRemoveProjectLocally={handleProjectRemovedLocally}
+              />
+            )}
 
-                {passwordSuccess && (
-                  <div className="user-form-success">
-                    {passwordSuccess}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  className="user-form-button"
-                  disabled={changingPassword}
-                >
-                  {changingPassword ? 'Changing...' : 'Change Password'}
-                </button>
-              </form>
-            </div>
-
-            <div className="user-cabinet-actions">
-              <button
-                className="user-signout-button"
-                onClick={async () => {
-                  try {
-                    await signOut()
-                    if (onSignOut) onSignOut()
-                  } catch (error) {
-                    console.error('Sign out error:', error)
-                  }
+            {activeTab === 'member' && selectedWorkspaceMember && (
+              <MemberProfileTab
+                member={selectedWorkspaceMember}
+                projects={selectedWorkspaceMemberProjects}
+                isLoadingProjects={loadingSelectedWorkspaceMemberProjects}
+                onBackToMembers={() => {
+                  setActiveTab(activeWorkspace?.workspaceType === 'personal' ? 'profile' : 'workspace')
                 }}
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'projects' && (
-          <div className="user-cabinet-section">
-            {projects.length === 0 ? (
-              <div className="user-projects-empty">
-                <p>You don't have any projects yet</p>
-                <p className="user-projects-empty-hint">Create your first project to see it here</p>
-              </div>
-            ) : (
-              <div className="user-projects-list">
-                {projects.map((project) => (
-                  <div key={project.id} className="user-project-card">
-                    <div className="user-project-header">
-                      <h3 className="user-project-name">{project.name}</h3>
-                      <span className={`user-project-status user-project-status-${project.status?.toLowerCase()}`}>
-                        {project.status}
-                      </span>
-                    </div>
-                    <div className="user-project-info">
-                      <div className="user-project-meta">
-                        <span className="user-project-format">{project.format}</span>
-                        <span className="user-project-separator">•</span>
-                        <span className={`user-project-orientation ${(project.screenFormat || project.screen_format) === 'portrait' ? 'portrait' : 'landscape'}`}>
-                          {(project.screenFormat || project.screen_format) === 'portrait' ? 'Portrait' : 'Landscape'}
-                        </span>
-                      </div>
-                      <div className="user-project-date">
-                        Created: {new Date(project.createdAt || project.created_at || Date.now()).toLocaleDateString('en-US')}
-                        {project.updatedAt && project.updatedAt !== (project.createdAt || project.created_at) && (
-                          <span className="user-project-updated">
-                            {' • Updated: ' + new Date(project.updatedAt).toLocaleDateString('en-US')}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="user-project-actions">
-                      <button
-                        className="user-project-action-btn user-project-action-preview"
-                        onClick={() => {
-                          if (onProjectPreview && project.images && project.images.length > 0) {
-                            const format = project.screenFormat || project.screen_format || 'landscape'
-                            onProjectPreview(project, format)
-                          } else {
-                            alert('No images in project for preview')
-                          }
-                        }}
-                        title="Preview"
-                        disabled={!project.images || project.images.length === 0}
-                      >
-                        👁️
-                      </button>
-                      <button
-                        className="user-project-action-btn user-project-action-export"
-                        onClick={() => {
-                          if (onProjectExport && project.images && project.images.length > 0) {
-                            onProjectExport(project)
-                          } else {
-                            alert('No images in project for export')
-                          }
-                        }}
-                        title="Export"
-                        disabled={!project.images || project.images.length === 0}
-                      >
-                        ⬇️
-                      </button>
-                      <button
-                        className={`user-project-action-btn user-project-action-edit ${(project.status === 'Active' && !isAdminUser) ? 'disabled' : ''}`}
-                        onClick={() => {
-                          if (onEditProject) {
-                            // Проверяем права доступа
-                            if (project.status === 'Active' && !isAdminUser) {
-                              alert('Only admin can edit active projects')
-                              return
-                            }
-                            onEditProject(project)
-                            onBack() // Возвращаемся к списку проектов
-                          }
-                        }}
-                        title={(project.status === 'Active' && !isAdminUser) ? 'Only admin can edit active projects' : 'Edit in Studio'}
-                        disabled={project.status === 'Active' && !isAdminUser}
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        className={`user-project-action-btn user-project-action-delete ${(project.status === 'Active' && !isAdminUser) ? 'disabled' : ''}`}
-                        onClick={() => {
-                          // Проверяем права доступа
-                          if (project.status === 'Active' && !isAdminUser) {
-                            alert('Only admin can delete active projects')
-                            return
-                          }
-                          
-                          if (window.confirm(`Are you sure you want to delete project "${project.name}"?`)) {
-                            if (onDeleteProject) {
-                              onDeleteProject(project.id)
-                              // Обновляем список проектов после удаления
-                              setProjects(prev => prev.filter(p => p.id !== project.id))
-                            }
-                          }
-                        }}
-                        title={(project.status === 'Active' && !isAdminUser) ? 'Only admin can delete active projects' : 'Delete'}
-                        disabled={project.status === 'Active' && !isAdminUser}
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              />
             )}
-          </div>
-        )}
 
-        {activeTab === 'users' && profile?.role === 'admin' && (
-          <div className="user-cabinet-section">
-            <h2 className="user-cabinet-section-title">User Management</h2>
-            {loadingUsers ? (
-              <div className="user-loading">Loading users...</div>
-            ) : allUsers.length === 0 ? (
-              <div className="user-projects-empty">
-                <p>No users found</p>
-              </div>
-            ) : (
-              <div className="user-users-table">
-                <div className="user-users-header">
-                  <div className="user-users-col user-users-col-email">Email</div>
-                  <div className="user-users-col user-users-col-name">Name</div>
-                  <div className="user-users-col user-users-col-role">Role</div>
-                  <div className="user-users-col user-users-col-status">Status</div>
-                  <div className="user-users-col user-users-col-date">Registration Date</div>
-                  <div className="user-users-col user-users-col-actions">Actions</div>
-                </div>
-                {allUsers.map((user) => (
-                  <div key={user.id} className="user-users-row">
-                    <div className="user-users-col user-users-col-email">
-                      {user.email || 'Not specified'}
-                    </div>
-                    <div className="user-users-col user-users-col-name">
-                      {user.full_name || 'Not specified'}
-                    </div>
-                    <div className="user-users-col user-users-col-role">
-                      {editingUserId === user.id ? (
-                        <select
-                          className="user-role-select"
-                          value={user.role}
-                          onChange={(e) => {
-                            handleRoleChange(user.id, e.target.value)
-                            setEditingUserId(null)
-                          }}
-                          onBlur={() => setEditingUserId(null)}
-                          autoFocus
-                        >
-                          <option value="user">User</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      ) : (
-                        <span 
-                          className={`user-role-badge ${user.role === 'admin' ? 'admin' : 'user'}`}
-                          onClick={() => setEditingUserId(user.id)}
-                          style={{ cursor: 'pointer' }}
-                          title="Click to change role"
-                        >
-                          {user.role === 'admin' ? 'Admin' : 'User'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="user-users-col user-users-col-status">
-                      {user.banned ? (
-                        <span className="user-banned-badge">Banned</span>
-                      ) : (
-                        <span className="user-active-badge">Active</span>
-                      )}
-                    </div>
-                    <div className="user-users-col user-users-col-date">
-                      {user.created_at 
-                        ? new Date(user.created_at).toLocaleDateString('en-US')
-                        : 'Not specified'}
-                    </div>
-                    <div className="user-users-col user-users-col-actions">
-                      <div className="user-users-actions-group">
-                        {editingUserId !== user.id && (
-                          <button
-                            className="user-edit-role-btn"
-                            onClick={() => setEditingUserId(user.id)}
-                            title="Change role"
-                          >
-                            ✏️
-                          </button>
-                        )}
-                        {user.id !== profile?.id && (
-                          <button
-                            className={user.banned ? "user-unban-btn" : "user-ban-btn"}
-                            onClick={async () => {
-                              if (isBanning) return // Предотвращаем множественные клики
-                              
-                              const action = user.banned ? 'unban' : 'ban'
-                              if (window.confirm(`Are you sure you want to ${action} account ${user.email || 'this user'}?`)) {
-                                try {
-                                  setIsBanning(true)
-                                  console.log('[DB DEBUG] Начало бана/разбана пользователя:', user.id, 'текущий статус banned:', user.banned)
-                                  if (user.banned) {
-                                    console.log('[DB DEBUG] Вызов unbanUser для пользователя:', user.id)
-                                    await unbanUser(user.id)
-                                  } else {
-                                    console.log('[DB DEBUG] Вызов banUser для пользователя:', user.id)
-                                    await banUser(user.id)
-                                  }
-                                  // Обновляем список пользователей
-                                  const newBannedStatus = !user.banned
-                                  console.log('[DB DEBUG] Обновление локального состояния, новый статус banned:', newBannedStatus)
-                                  setAllUsers(prev => prev.map(u => 
-                                    u.id === user.id ? { ...u, banned: newBannedStatus } : u
-                                  ))
-                                  // Перезагружаем список пользователей для синхронизации с БД (без блокировки UI)
-                                  loadAllUsers().catch(err => {
-                                    console.error('[DB DEBUG] Ошибка при перезагрузке пользователей:', err)
-                                  })
-                                  alert(`User ${user.banned ? 'unbanned' : 'banned'}`)
-                                } catch (error) {
-                                  console.error('[DB DEBUG] Ошибка бана/разбана пользователя:', error)
-                                  alert('Error: ' + error.message)
-                                } finally {
-                                  setIsBanning(false)
-                                }
-                              }
-                            }}
-                            disabled={isBanning}
-                            title={user.banned ? "Unban user" : "Ban user"}
-                          >
-                            {user.banned ? '🔓' : '🔒'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            {activeTab === 'users' && profile?.role === 'admin' && (
+              <UsersTab
+                loadingUsers={loadingUsers}
+                allUsers={allUsers}
+                editingUserId={editingUserId}
+                setEditingUserId={setEditingUserId}
+                profile={profile}
+                isBanning={isBanning}
+                onViewUser={handleViewUser}
+                onRoleChange={handleRoleChange}
+                onTeamRoleChange={handleTeamRoleChange}
+                onToggleBan={handleToggleBan}
+              />
             )}
-          </div>
-        )}
+          </section>
+        </div>
       </div>
     </div>
   )
 }
 
 export default UserCabinet
-

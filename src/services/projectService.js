@@ -1,4 +1,9 @@
 import { supabase } from '../lib/supabase'
+import {
+  getWorkflowTeamRole,
+  normalizeProjectStatus
+} from '../components/shared/utils/projectWorkflow'
+import { getCurrentWorkspaceProfile } from './workspaceService'
 
 // Допоміжна функція для логування з часом
 const logWithTime = (message, data = null) => {
@@ -21,44 +26,83 @@ const logError = (message, error) => {
   })
 }
 
+const getCurrentActorContext = async (workspaceId = null) => {
+  const actorStartTime = performance.now()
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const actorDuration = (performance.now() - actorStartTime).toFixed(2)
+
+    if (userError) {
+      logError(`getCurrentActorContext: Помилка отримання користувача (${actorDuration}ms)`, userError)
+      throw userError
+    }
+
+    if (!user) {
+      throw new Error('User not authenticated')
+    }
+
+    let actorProfile = null
+
+    if (workspaceId) {
+      actorProfile = await getCurrentWorkspaceProfile(workspaceId)
+    } else {
+      const profileStartTime = performance.now()
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      const profileDuration = (performance.now() - profileStartTime).toFixed(2)
+
+      if (profileError) {
+        logError(`getCurrentActorContext: Помилка отримання профілю (${profileDuration}ms)`, profileError)
+        throw profileError
+      }
+
+      actorProfile = profile
+    }
+
+    actorProfile = actorProfile || {
+      id: user.id,
+      role: 'user',
+      team_role: 'developer',
+      email: user.email
+    }
+
+    logWithTime(`getCurrentActorContext: Контекст користувача отримано (${actorDuration}ms)`, {
+      userId: user.id,
+      role: actorProfile.role,
+      teamRole: actorProfile.team_role
+    })
+
+    return { user, profile: actorProfile }
+  } catch (error) {
+    logError('getCurrentActorContext: Критична помилка', error)
+    throw error
+  }
+}
+
 // Отримати всі проєкти поточного користувача
-export const getUserProjects = async () => {
+export const getUserProjects = async (workspaceId) => {
   const startTime = performance.now()
   logWithTime('getUserProjects: Початок запиту')
   
   try {
-    logWithTime('getUserProjects: Отримання поточного користувача')
-    const userStartTime = performance.now()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    const userDuration = (performance.now() - userStartTime).toFixed(2)
-    
-    if (userError) {
-      logError(`getUserProjects: Помилка отримання користувача (${userDuration}ms)`, userError)
-      throw userError
-    }
-    
-    if (!user) {
-      logError('getUserProjects: Користувач не автентифікований')
-      throw new Error('User not authenticated')
+    if (!workspaceId) {
+      throw new Error('A workspace identifier is required to load projects.')
     }
 
-    logWithTime(`getUserProjects: Користувач отримано (${userDuration}ms)`, {
-      userId: user.id,
-      email: user.email
-    })
-    
-    logWithTime('getUserProjects: Запит проєктів з БД', {
-      userId: user.id,
-      table: 'projects',
-      filter: `user_id = ${user.id}`
-    })
-    
-    const queryStartTime = performance.now()
-    const { data, error } = await supabase
+    const { user, profile } = await getCurrentActorContext(workspaceId)
+    const query = supabase
       .from('projects')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false })
+
+    const queryStartTime = performance.now()
+    const { data, error } = await query
     
     const queryDuration = (performance.now() - queryStartTime).toFixed(2)
     const totalDuration = (performance.now() - startTime).toFixed(2)
@@ -82,12 +126,61 @@ export const getUserProjects = async () => {
     
     logWithTime(`getUserProjects: Успішно (загалом ${totalDuration}ms)`, {
       projectsCount: data?.length || 0,
-      userId: user.id
+      userId: user.id,
+      role: profile.role,
+      teamRole: getWorkflowTeamRole(profile),
+      workspaceId
     })
     return data || []
   } catch (error) {
     const duration = (performance.now() - startTime).toFixed(2)
     logError(`getUserProjects: Критична помилка (${duration}ms)`, error)
+    throw error
+  }
+}
+
+export const getAccessibleProjects = async (workspaceId) => {
+  try {
+    return await getUserProjects(workspaceId)
+  } catch (error) {
+    logError('getAccessibleProjects: Критична помилка', error)
+    throw error
+  }
+}
+
+export const getWorkspaceMemberProjects = async (workspaceId, memberUserId) => {
+  const startTime = performance.now()
+
+  try {
+    if (!workspaceId) {
+      throw new Error('A workspace identifier is required to load member projects.')
+    }
+
+    if (!memberUserId) {
+      throw new Error('A member user identifier is required to load member projects.')
+    }
+
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .or(`user_id.eq.${memberUserId},developer_id.eq.${memberUserId},qa_id.eq.${memberUserId}`)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      logError('getWorkspaceMemberProjects: Помилка отримання проєктів учасника', error)
+      throw error
+    }
+
+    logWithTime(`getWorkspaceMemberProjects: Успішно (${(performance.now() - startTime).toFixed(2)}ms)`, {
+      workspaceId,
+      memberUserId,
+      projectsCount: data?.length || 0
+    })
+
+    return data || []
+  } catch (error) {
+    logError(`getWorkspaceMemberProjects: Критична помилка (${(performance.now() - startTime).toFixed(2)}ms)`, error)
     throw error
   }
 }
@@ -146,6 +239,7 @@ export const getPublicProjects = async () => {
     const { data, error } = await supabase
       .from('projects')
       .select('*')
+      .eq('is_public_preview', true)
       .order('created_at', { ascending: false })
     
     const queryDuration = (performance.now() - queryStartTime).toFixed(2)
@@ -180,7 +274,7 @@ export const getPublicProjects = async () => {
 }
 
 // Створити новий проєкт
-export const createProject = async (projectData) => {
+export const createProject = async (projectData, workspaceId) => {
   const startTime = performance.now()
   logWithTime('createProject: Початок створення проєкту', {
     name: projectData.name,
@@ -190,29 +284,26 @@ export const createProject = async (projectData) => {
   })
   
   try {
-    logWithTime('createProject: Отримання поточного користувача')
-    const userStartTime = performance.now()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    const userDuration = (performance.now() - userStartTime).toFixed(2)
-    
-    if (userError) {
-      logError(`createProject: Помилка отримання користувача (${userDuration}ms)`, userError)
-      throw userError
+    if (!workspaceId) {
+      throw new Error('A workspace identifier is required to create a project.')
     }
-    
-    if (!user) {
-      logError('createProject: Користувач не автентифікований')
-      throw new Error('User not authenticated')
+
+    const { user, profile } = await getCurrentActorContext(workspaceId)
+    const workflowTeamRole = getWorkflowTeamRole(profile)
+    const isWorkspaceLead = profile.role === 'admin' || profile.workspace_role === 'owner' || profile.workspaceRole === 'owner'
+
+    if (!isWorkspaceLead && workflowTeamRole !== 'developer') {
+      throw new Error('Only team leads and developers can create projects.')
     }
-    
-    logWithTime(`createProject: Користувач отримано (${userDuration}ms)`, {
-      userId: user.id
-    })
+
+    const requestedDeveloperId = projectData.developerId || projectData.developer_id || null
+    const requestedQaId = projectData.qaId || projectData.qa_id || null
     
     const projectToInsert = {
+      workspace_id: workspaceId,
       user_id: user.id,
       name: projectData.name,
-      status: projectData.status,
+      status: normalizeProjectStatus(projectData.status),
       format: projectData.format,
       screen_format: projectData.screenFormat || projectData.screen_format || 'landscape',
       images: projectData.images || [],
@@ -220,15 +311,28 @@ export const createProject = async (projectData) => {
       css_code: projectData.cssCode || projectData.css_code || '',
       scene_background: projectData.sceneBackground || projectData.scene_background || '#ffffff',
       scene_border_style: projectData.sceneBorderStyle || projectData.scene_border_style || 'none',
-      scene_border_color: projectData.sceneBorderColor || projectData.scene_border_color || '#000000'
+      scene_border_color: projectData.sceneBorderColor || projectData.scene_border_color || '#000000',
+      developer_id: isWorkspaceLead ? (requestedDeveloperId || user.id) : user.id,
+      qa_id: isWorkspaceLead
+        ? (requestedQaId ?? ((profile.workspace_type || profile.workspaceType) === 'personal' ? user.id : null))
+        : null,
+      qa_handoff_note: projectData.qaHandoffNote || projectData.qa_handoff_note || null,
+      qa_feedback_note: projectData.qaFeedbackNote || projectData.qa_feedback_note || null,
+      is_archived: Boolean(projectData.isArchived ?? projectData.is_archived ?? false),
+      archived_at: projectData.archivedAt || projectData.archived_at || null,
+      archived_by: projectData.archivedBy || projectData.archived_by || null
     }
     
     logWithTime('createProject: Підготовка даних для вставки', {
       userId: projectToInsert.user_id,
+      workspaceId: projectToInsert.workspace_id,
       name: projectToInsert.name,
       imagesCount: projectToInsert.images?.length || 0,
       codeLength: projectToInsert.code?.length || 0,
-      cssCodeLength: projectToInsert.css_code?.length || 0
+      cssCodeLength: projectToInsert.css_code?.length || 0,
+      developerId: projectToInsert.developer_id,
+      qaId: projectToInsert.qa_id,
+      teamRole: workflowTeamRole
     })
     
     logWithTime('createProject: Вставка проєкту в БД')
@@ -307,6 +411,30 @@ export const updateProject = async (projectId, updates) => {
     if (updates.sceneBorderColor !== undefined || updates.scene_border_color !== undefined) {
       updateData.scene_border_color = updates.sceneBorderColor || updates.scene_border_color
     }
+    if (updates.developerId !== undefined || updates.developer_id !== undefined) {
+      updateData.developer_id = updates.developerId ?? updates.developer_id ?? null
+    }
+    if (updates.qaId !== undefined || updates.qa_id !== undefined) {
+      updateData.qa_id = updates.qaId ?? updates.qa_id ?? null
+    }
+    if (updates.status !== undefined) {
+      updateData.status = normalizeProjectStatus(updates.status)
+    }
+    if (updates.qaHandoffNote !== undefined || updates.qa_handoff_note !== undefined) {
+      updateData.qa_handoff_note = updates.qaHandoffNote ?? updates.qa_handoff_note ?? null
+    }
+    if (updates.qaFeedbackNote !== undefined || updates.qa_feedback_note !== undefined) {
+      updateData.qa_feedback_note = updates.qaFeedbackNote ?? updates.qa_feedback_note ?? null
+    }
+    if (updates.isArchived !== undefined || updates.is_archived !== undefined) {
+      updateData.is_archived = Boolean(updates.isArchived ?? updates.is_archived)
+    }
+    if (updates.archivedAt !== undefined || updates.archived_at !== undefined) {
+      updateData.archived_at = updates.archivedAt ?? updates.archived_at ?? null
+    }
+    if (updates.archivedBy !== undefined || updates.archived_by !== undefined) {
+      updateData.archived_by = updates.archivedBy ?? updates.archived_by ?? null
+    }
     
     logWithTime('updateProject: Підготовка даних для оновлення', {
       projectId,
@@ -327,8 +455,12 @@ export const updateProject = async (projectId, updates) => {
     const totalDuration = (performance.now() - startTime).toFixed(2)
     
     if (error) {
-      logError(`updateProject: Помилка оновлення (${updateDuration}ms, загалом ${totalDuration}ms)`, error)
-      throw error
+      const normalizedError = error.message?.includes('Cannot coerce the result to a single JSON object')
+        ? new Error('Project not found or you do not have permission to update it.')
+        : error
+
+      logError(`updateProject: Помилка оновлення (${updateDuration}ms, загалом ${totalDuration}ms)`, normalizedError)
+      throw normalizedError
     }
     
     logWithTime(`updateProject: Проєкт оновлено успішно (загалом ${totalDuration}ms)`, {
@@ -385,7 +517,7 @@ export const transformProjectFromDB = (dbProject) => {
   const transformed = {
     id: dbProject.id,
     name: dbProject.name,
-    status: dbProject.status,
+    status: normalizeProjectStatus(dbProject.status),
     format: dbProject.format,
     screenFormat: dbProject.screen_format,
     images: dbProject.images || [],
@@ -396,9 +528,27 @@ export const transformProjectFromDB = (dbProject) => {
     sceneBorderColor: dbProject.scene_border_color || '#000000',
     createdAt: dbProject.created_at,
     updatedAt: dbProject.updated_at,
+    workspace_id: dbProject.workspace_id,
+    workspaceId: dbProject.workspace_id,
+    is_public_preview: Boolean(dbProject.is_public_preview),
+    isPublicPreview: Boolean(dbProject.is_public_preview),
     // Додаємо user_id для фільтрації
     user_id: dbProject.user_id,
     userId: dbProject.user_id,
+    developer_id: dbProject.developer_id,
+    developerId: dbProject.developer_id,
+    qa_id: dbProject.qa_id,
+    qaId: dbProject.qa_id,
+    qa_handoff_note: dbProject.qa_handoff_note || '',
+    qaHandoffNote: dbProject.qa_handoff_note || '',
+    qa_feedback_note: dbProject.qa_feedback_note || '',
+    qaFeedbackNote: dbProject.qa_feedback_note || '',
+    is_archived: Boolean(dbProject.is_archived),
+    isArchived: Boolean(dbProject.is_archived),
+    archived_at: dbProject.archived_at,
+    archivedAt: dbProject.archived_at,
+    archived_by: dbProject.archived_by,
+    archivedBy: dbProject.archived_by,
     // Для зворотної сумісності
     screen_format: dbProject.screen_format,
     created_at: dbProject.created_at,
@@ -422,7 +572,8 @@ export const transformProjectToDB = (appProject) => {
   
   const transformed = {
     name: appProject.name,
-    status: appProject.status,
+    status: normalizeProjectStatus(appProject.status),
+    workspace_id: appProject.workspaceId || appProject.workspace_id || null,
     format: appProject.format,
     screen_format: appProject.screenFormat || appProject.screen_format || 'landscape',
     images: appProject.images || [],
@@ -430,7 +581,15 @@ export const transformProjectToDB = (appProject) => {
     css_code: appProject.cssCode || appProject.css_code || '',
     scene_background: appProject.sceneBackground || appProject.scene_background || '#ffffff',
     scene_border_style: appProject.sceneBorderStyle || appProject.scene_border_style || 'none',
-    scene_border_color: appProject.sceneBorderColor || appProject.scene_border_color || '#000000'
+    scene_border_color: appProject.sceneBorderColor || appProject.scene_border_color || '#000000',
+    developer_id: appProject.developerId || appProject.developer_id || null,
+    qa_id: appProject.qaId || appProject.qa_id || null,
+    qa_handoff_note: appProject.qaHandoffNote || appProject.qa_handoff_note || null,
+    qa_feedback_note: appProject.qaFeedbackNote || appProject.qa_feedback_note || null,
+    is_archived: Boolean(appProject.isArchived ?? appProject.is_archived ?? false),
+    archived_at: appProject.archivedAt || appProject.archived_at || null,
+    archived_by: appProject.archivedBy || appProject.archived_by || null,
+    is_public_preview: Boolean(appProject.isPublicPreview ?? appProject.is_public_preview ?? false)
   }
   
   logWithTime('transformProjectToDB: Перетворення завершено', {
