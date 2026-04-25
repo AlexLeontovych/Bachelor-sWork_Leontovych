@@ -176,6 +176,7 @@
   position: relative;
   overflow: hidden;
   border-radius: 14px;
+  transform-origin: center center;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08),
     0 0 0 1px rgba(108, 158, 255, 0.16),
@@ -229,9 +230,18 @@
   position: absolute;
 }
 
+.canvas-image-wrapper.locked .canvas-image,
+.canvas-image-wrapper.locked .canvas-text {
+  outline-color: rgba(212, 175, 122, 0.72);
+}
+
+.canvas-image-wrapper.hidden {
+  display: none;
+}
+
 .canvas-image {
-  max-width: 100%;
-  max-height: 100%;
+  max-width: none;
+  max-height: none;
   object-fit: contain;
   user-select: none;
   pointer-events: auto;
@@ -296,6 +306,12 @@
   color: var(--text-muted);
   font: inherit;
   cursor: pointer;
+}
+
+.canvas-zoom-chip .canvas-zoom-value {
+  min-width: 42px;
+  color: var(--text-primary);
+  font-weight: 800;
 }
 
 .canvas-zoom-chip button:hover {

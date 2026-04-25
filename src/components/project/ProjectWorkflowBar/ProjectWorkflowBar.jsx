@@ -125,7 +125,7 @@ const ProjectWorkflowBar = ({ project, profile, isSaved = true, isBusy = false, 
 
   const currentStatus = useMemo(() => normalizeProjectStatus(project?.status), [project])
   const workflowRole = useMemo(() => getWorkflowTeamRole(profile), [profile])
-  const isLead = profile?.role === 'admin'
+  const isLead = workflowRole === 'lead'
   const isAssignedDeveloper = Boolean(project && profile?.id && getProjectDeveloperId(project) === profile.id && workflowRole === 'developer')
   const isAssignedQa = Boolean(project && profile?.id && getProjectQaId(project) === profile.id && workflowRole === 'qa')
   const isArchived = isProjectArchived(project)

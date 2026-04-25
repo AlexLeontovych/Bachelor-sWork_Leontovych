@@ -165,6 +165,15 @@
   opacity: 0.5;
 }
 
+.layers-window-item.locked {
+  cursor: default;
+}
+
+.layers-window-item.hidden-layer .layers-window-item-name,
+.layers-window-item.hidden-layer .layers-window-item-meta {
+  opacity: 0.56;
+}
+
 .layers-window-item-grip {
   color: var(--text-subtle);
 }
@@ -230,12 +239,25 @@
   border-radius: 8px;
   border: 1px solid rgba(144, 164, 208, 0.1);
   background: rgba(255, 255, 255, 0.03);
+  color: var(--text-subtle);
+  cursor: pointer;
 }
 
 .layers-window-item-status-icon.locked {
   color: #f2d28b;
   border-color: rgba(212, 175, 122, 0.22);
   background: rgba(212, 175, 122, 0.08);
+}
+
+.layers-window-item-status-icon.hidden {
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.layers-window-item-status-icon:hover {
+  color: var(--text-primary);
+  border-color: rgba(144, 164, 208, 0.24);
 }
 
 .layers-window-item-delete {

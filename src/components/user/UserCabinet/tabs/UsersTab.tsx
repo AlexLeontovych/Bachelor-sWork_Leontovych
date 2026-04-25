@@ -130,12 +130,13 @@ const UsersTab = ({
                         onBlur={() => setEditingUserId(null)}
                         disabled={user.role === 'admin'}
                       >
+                        <option value="lead">Lead</option>
                         <option value="developer">Developer</option>
                         <option value="qa">QA</option>
                       </select>
                     ) : (
                       <RoleBadge
-                        role={user.role === 'admin' ? 'lead' : user.team_role === 'qa' ? 'qa' : 'developer'}
+                        role={user.role === 'admin' ? 'lead' : user.team_role === 'lead' ? 'lead' : user.team_role === 'qa' ? 'qa' : 'developer'}
                         label={functionLabel}
                         size="sm"
                       />

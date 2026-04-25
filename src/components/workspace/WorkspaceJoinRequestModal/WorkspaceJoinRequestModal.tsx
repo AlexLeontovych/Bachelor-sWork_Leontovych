@@ -3,6 +3,8 @@ import { Check, Clock3, ShieldCheck, UserRound, X } from 'lucide-react'
 import RoleBadge from '../../shared/ui/RoleBadge'
 import './WorkspaceJoinRequestModal.css'
 
+type WorkspaceWorkflowRole = 'developer' | 'qa' | 'lead'
+
 type WorkspaceJoinRequestDetails = {
   requestId: string
   workspaceId: string
@@ -12,7 +14,7 @@ type WorkspaceJoinRequestDetails = {
   requesterEmail: string | null
   status: 'pending' | 'accepted' | 'declined'
   requestedAt: string
-  workflowRole: 'developer' | 'qa' | null
+  workflowRole: WorkspaceWorkflowRole | null
   isLoadingDetails?: boolean
   detailsError?: string | null
 }
@@ -20,7 +22,7 @@ type WorkspaceJoinRequestDetails = {
 interface WorkspaceJoinRequestModalProps {
   request: WorkspaceJoinRequestDetails | null
   isSubmitting?: boolean
-  onAccept: (workflowRole: 'developer' | 'qa') => void
+  onAccept: (workflowRole: WorkspaceWorkflowRole) => void
   onDecline: () => void
   onClose: () => void
 }
@@ -54,7 +56,7 @@ const WorkspaceJoinRequestModal = ({
   onDecline,
   onClose
 }: WorkspaceJoinRequestModalProps) => {
-  const [selectedRole, setSelectedRole] = useState<'developer' | 'qa'>('developer')
+  const [selectedRole, setSelectedRole] = useState<WorkspaceWorkflowRole>('developer')
 
   if (!request) {
     return null
@@ -113,6 +115,14 @@ const WorkspaceJoinRequestModal = ({
               </div>
             </div>
             <div className="workspace-join-request-modal__role-actions">
+              <button
+                type="button"
+                className={selectedRole === 'lead' ? 'active' : ''}
+                onClick={() => setSelectedRole('lead')}
+                disabled={isSubmitting}
+              >
+                <RoleBadge role="lead" label="Lead" size="sm" />
+              </button>
               <button
                 type="button"
                 className={selectedRole === 'developer' ? 'active' : ''}

@@ -31,6 +31,7 @@ const WORKSPACE_PLAN_CONFIG = {
     orderDescription: 'Corporate workspace activation'
   }
 } as const
+const WORKSPACE_PAYMENT_FINAL_TIMEOUT_MS = 180_000
 
 const getRequiredEnv = (name: string) => {
   const value = Deno.env.get(name)
@@ -77,17 +78,16 @@ const buildWorkspaceName = ({
   return planType === 'personal' ? `${workspacePrefix} workspace` : `${workspacePrefix} corporate workspace`
 }
 
-const selectOwnedWorkspaceForCheckout = (workspaces: OwnedWorkspaceRecord[]) =>
-  [...workspaces].sort((leftWorkspace, rightWorkspace) => {
+const getOwnedWorkspaceByPlanType = (
+  workspaces: OwnedWorkspaceRecord[],
+  planType: WorkspacePlanType
+) =>
+  workspaces.filter((workspace) => workspace.type === planType).sort((leftWorkspace, rightWorkspace) => {
     const leftStatusRank = leftWorkspace.status === 'active' ? 0 : leftWorkspace.status === 'pending_payment' ? 1 : 2
     const rightStatusRank = rightWorkspace.status === 'active' ? 0 : rightWorkspace.status === 'pending_payment' ? 1 : 2
 
     if (leftStatusRank !== rightStatusRank) {
       return leftStatusRank - rightStatusRank
-    }
-
-    if (leftWorkspace.type !== rightWorkspace.type) {
-      return leftWorkspace.type === 'team' ? -1 : 1
     }
 
     return leftWorkspace.name.localeCompare(rightWorkspace.name)
@@ -104,13 +104,10 @@ const resolveWorkspaceCheckoutConflict = ({
     return null
   }
 
-  if (ownedWorkspace.type === 'team') {
+  if (ownedWorkspace.type === 'team' && planType === 'team') {
     return {
       status: 409,
-      message:
-        planType === 'team'
-          ? 'You already have an active corporate workspace.'
-          : 'A corporate workspace is already active for this account.'
+      message: 'You already have an active corporate workspace.'
     }
   }
 
@@ -122,6 +119,24 @@ const resolveWorkspaceCheckoutConflict = ({
   }
 
   return null
+}
+
+const isPaymentRecordExpired = (createdAt: unknown, now = Date.now()) => {
+  try {
+    if (typeof createdAt !== 'string' || !createdAt.trim()) {
+      return false
+    }
+
+    const createdTimestamp = Date.parse(createdAt)
+
+    if (Number.isNaN(createdTimestamp)) {
+      return false
+    }
+
+    return now - createdTimestamp >= WORKSPACE_PAYMENT_FINAL_TIMEOUT_MS
+  } catch (error) {
+    return false
+  }
 }
 
 Deno.serve(async (request) => {
@@ -151,7 +166,7 @@ Deno.serve(async (request) => {
         .order('created_at', { ascending: true }),
       adminClient
         .from('workspace_payments')
-        .select('id, provider_order_id, checkout_url, raw_request')
+        .select('id, provider_order_id, checkout_url, raw_request, created_at')
         .eq('user_id', user.id)
         .eq('plan_type', parsedRequest.planType)
         .in('status', ['pending', 'processing'])
@@ -168,9 +183,8 @@ Deno.serve(async (request) => {
       throw existingPaymentResult.error
     }
 
-    const ownedWorkspace = selectOwnedWorkspaceForCheckout(
-      (existingOwnedWorkspacesResult.data || []) as OwnedWorkspaceRecord[]
-    )
+    const ownedWorkspaces = (existingOwnedWorkspacesResult.data || []) as OwnedWorkspaceRecord[]
+    const ownedWorkspace = getOwnedWorkspaceByPlanType(ownedWorkspaces, parsedRequest.planType)
     const checkoutConflict = resolveWorkspaceCheckoutConflict({
       planType: parsedRequest.planType,
       ownedWorkspace
@@ -185,19 +199,40 @@ Deno.serve(async (request) => {
       )
     }
 
-    const existingRawRequest = existingPaymentResult.data?.raw_request
+    const existingPendingPayment = existingPaymentResult.data
+    const isExistingPendingPaymentExpired = isPaymentRecordExpired(existingPendingPayment?.created_at)
+
+    if (existingPendingPayment?.id && isExistingPendingPaymentExpired) {
+      const { error: expirePaymentError } = await adminClient
+        .from('workspace_payments')
+        .update({
+          status: 'failed',
+          raw_response: {
+            expiredReason: 'Payment was not confirmed within 3 minutes.',
+            expiredAt: new Date().toISOString()
+          }
+        })
+        .eq('id', existingPendingPayment.id)
+        .in('status', ['pending', 'processing'])
+
+      if (expirePaymentError) {
+        throw expirePaymentError
+      }
+    }
+
+    const existingRawRequest = !isExistingPendingPaymentExpired ? existingPendingPayment?.raw_request : null
     const existingMonobankCheckout =
-      typeof existingPaymentResult.data?.checkout_url === 'string' &&
-      existingPaymentResult.data.checkout_url.length > 0 &&
+      typeof existingPendingPayment?.checkout_url === 'string' &&
+      existingPendingPayment.checkout_url.length > 0 &&
       !!existingRawRequest &&
       typeof existingRawRequest === 'object' &&
       'webHookUrl' in existingRawRequest
 
     if (existingMonobankCheckout) {
       return jsonResponse({
-        checkoutUrl: existingPaymentResult.data.checkout_url,
-        orderId: existingPaymentResult.data.provider_order_id,
-        paymentId: existingPaymentResult.data.id
+        checkoutUrl: existingPendingPayment.checkout_url,
+        orderId: existingPendingPayment.provider_order_id,
+        paymentId: existingPendingPayment.id
       })
     }
 
@@ -206,7 +241,7 @@ Deno.serve(async (request) => {
     const monobankApiBaseUrl = Deno.env.get('MONOBANK_API_BASE_URL') || undefined
     const callbackUrl = `${trimTrailingSlash(getRequiredEnv('SUPABASE_URL'))}/functions/v1/payment-callback`
     const workspacePlan = WORKSPACE_PLAN_CONFIG[parsedRequest.planType]
-    const upgradeTargetWorkspace = parsedRequest.planType === 'team' && ownedWorkspace?.type === 'personal' ? ownedWorkspace : null
+    const upgradeTargetWorkspace = null
     const workspaceName =
       upgradeTargetWorkspace?.name ||
       buildWorkspaceName({

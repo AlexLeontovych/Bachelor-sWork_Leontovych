@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Eye, GripVertical, Image as ImageIcon, Lock, LockOpen, Search, Trash2, Type, X } from 'lucide-react'
+import { Eye, EyeOff, GripVertical, Image as ImageIcon, Lock, LockOpen, Search, Trash2, Type, X } from 'lucide-react'
 import './LayersWindow.css'
 
 const LayersWindow = ({
@@ -19,6 +19,8 @@ const LayersWindow = ({
   onWindowDragStart,
   onSetEditingId,
   onUpdateImageName,
+  onToggleLayerVisibility,
+  onToggleLayerLock,
   projectName
 }) => {
   const [filterQuery, setFilterQuery] = useState('')
@@ -93,12 +95,13 @@ const LayersWindow = ({
               const LayerIcon = image.type === 'text' ? Type : ImageIcon
               const isEditing = editingLayerId === image.id
               const isLocked = Boolean(image.locked)
+              const isVisible = image.visible !== false
 
               return (
                 <div
                   key={image.id}
-                  className={`layers-window-item ${draggedLayerIndex === image.zIndex ? 'dragging' : ''} ${selectedImageId === image.id ? 'selected' : ''}`}
-                  draggable
+                  className={`layers-window-item ${draggedLayerIndex === image.zIndex ? 'dragging' : ''} ${selectedImageId === image.id ? 'selected' : ''} ${isLocked ? 'locked' : ''} ${!isVisible ? 'hidden-layer' : ''}`}
+                  draggable={!isLocked}
                   onDragStart={(event) => onLayerDragStart(event, image.zIndex)}
                   onDragOver={(event) => onLayerDragOver(event, image.zIndex)}
                   onDragEnd={onLayerDragEnd}
@@ -156,12 +159,30 @@ const LayersWindow = ({
                   </div>
 
                   <div className="layers-window-item-status">
-                    <span className="layers-window-item-status-icon">
-                      <Eye size={14} />
-                    </span>
-                    <span className={`layers-window-item-status-icon ${isLocked ? 'locked' : ''}`}>
+                    <button
+                      type="button"
+                      className={`layers-window-item-status-icon ${!isVisible ? 'hidden' : ''}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onToggleLayerVisibility?.(image.id)
+                      }}
+                      title={isVisible ? 'Hide layer' : 'Show layer'}
+                      aria-label={isVisible ? 'Hide layer' : 'Show layer'}
+                    >
+                      {isVisible ? <Eye size={14} /> : <EyeOff size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      className={`layers-window-item-status-icon ${isLocked ? 'locked' : ''}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onToggleLayerLock?.(image.id)
+                      }}
+                      title={isLocked ? 'Unlock layer' : 'Lock layer'}
+                      aria-label={isLocked ? 'Unlock layer' : 'Lock layer'}
+                    >
                       {isLocked ? <Lock size={14} /> : <LockOpen size={14} />}
-                    </span>
+                    </button>
                   </div>
 
                   <button

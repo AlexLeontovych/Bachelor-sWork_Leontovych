@@ -11,6 +11,8 @@ const requestSchema = z.object({
 
 const getWorkflowRoleLabel = (role?: string | null) => {
   switch (role) {
+    case 'lead':
+      return 'Team Lead'
     case 'qa':
       return 'QA Engineer'
     case 'developer':

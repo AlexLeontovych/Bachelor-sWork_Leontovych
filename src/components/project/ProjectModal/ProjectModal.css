@@ -299,6 +299,7 @@
   outline: 0;
   background: transparent;
   color: var(--text-primary);
+  color-scheme: dark;
   font: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -306,9 +307,15 @@
   cursor: pointer;
 }
 
+.project-modal-content .modal-select option,
 .project-modal-assignee-select option {
-  background: #111827;
+  background-color: #101827;
   color: #f8fbff;
+}
+
+.project-modal-assignee-select option:checked {
+  background-color: #2f6fd6;
+  color: #ffffff;
 }
 
 .project-modal-footer {

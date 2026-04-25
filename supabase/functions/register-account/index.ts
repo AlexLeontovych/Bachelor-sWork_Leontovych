@@ -81,17 +81,24 @@ Deno.serve(async (request) => {
 
     createdUserId = createdUserResponse.user.id
 
-    if (normalizedFullName) {
-      const { error: updateProfileError } = await adminClient
-        .from('profiles')
-        .update({
-          full_name: normalizedFullName
-        })
-        .eq('id', createdUserResponse.user.id)
+    const { error: upsertProfileError } = await adminClient
+      .from('profiles')
+      .upsert(
+        {
+          id: createdUserResponse.user.id,
+          email: createdUserResponse.user.email ?? parsedRequest.email,
+          full_name: normalizedFullName,
+          role: 'user',
+          team_role: 'developer',
+          banned: false
+        },
+        {
+          onConflict: 'id'
+        }
+      )
 
-      if (updateProfileError) {
-        throw updateProfileError
-      }
+    if (upsertProfileError) {
+      throw upsertProfileError
     }
 
     return jsonResponse(

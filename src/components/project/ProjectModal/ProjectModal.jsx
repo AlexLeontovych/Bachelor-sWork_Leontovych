@@ -54,10 +54,14 @@ const ProjectModal = ({
   const lockedStatusLabel =
     PROJECT_STATUS_OPTIONS.find((option) => option.value === DEFAULT_PROJECT_STATUS)?.label || 'Development'
   const developerUsers = useMemo(() => (
-    assignableUsers.filter((workflowUser) => getWorkflowTeamRole(toWorkflowProfile(workflowUser)) === 'developer')
+    assignableUsers.filter((workflowUser) => (
+      ['developer', 'lead'].includes(getWorkflowTeamRole(toWorkflowProfile(workflowUser)))
+    ))
   ), [assignableUsers])
   const qaUsers = useMemo(() => (
-    assignableUsers.filter((workflowUser) => getWorkflowTeamRole(toWorkflowProfile(workflowUser)) === 'qa')
+    assignableUsers.filter((workflowUser) => (
+      ['qa', 'lead'].includes(getWorkflowTeamRole(toWorkflowProfile(workflowUser)))
+    ))
   ), [assignableUsers])
   const availableProjectFormats = PROJECT_FORMATS_BY_ORIENTATION[screenFormat] || PROJECT_FORMATS_BY_ORIENTATION.landscape
 

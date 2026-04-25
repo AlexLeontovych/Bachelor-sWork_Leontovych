@@ -32,6 +32,8 @@ interface WorkspaceJoinCredentialsSecret {
   workspacePassword?: string
 }
 
+type WorkspaceWorkflowRole = 'developer' | 'qa' | 'lead'
+
 interface ActiveWorkspace {
   workspaceId: string
   workspaceName: string
@@ -53,7 +55,7 @@ interface WorkspaceTabProps {
   isWorkspaceInviteLoading: boolean
   onWorkspaceChange?: (workspaceId: string) => void
   onRotateWorkspaceCredentials?: () => void | Promise<unknown>
-  onUpdateMemberRole?: (membershipId: string, workflowRole: 'developer' | 'qa') => void | Promise<void>
+  onUpdateMemberRole?: (membershipId: string, workflowRole: WorkspaceWorkflowRole) => void | Promise<void>
   onRemoveMember?: (membershipId: string) => void | Promise<void>
   onViewMember?: (member: WorkspaceMember) => void
   onInviteEmailChange: (value: string) => void
@@ -71,6 +73,26 @@ const getInitials = (fullName?: string, email?: string) => {
   }
 
   return label.slice(0, 2).toUpperCase()
+}
+
+const getWorkflowRoleLabel = (workflowRole?: string | null) => {
+  if (workflowRole === 'lead') {
+    return 'Lead'
+  }
+
+  if (workflowRole === 'qa') {
+    return 'QA'
+  }
+
+  return 'Developer'
+}
+
+const getWorkflowRoleValue = (workflowRole?: string | null): WorkspaceWorkflowRole => {
+  if (workflowRole === 'lead' || workflowRole === 'qa') {
+    return workflowRole
+  }
+
+  return 'developer'
 }
 
 const WorkspaceTab = ({
@@ -131,7 +153,7 @@ const WorkspaceTab = ({
     }
   }
 
-  const handleUpdateMemberRole = async (membershipId: string, workflowRole: 'developer' | 'qa') => {
+  const handleUpdateMemberRole = async (membershipId: string, workflowRole: WorkspaceWorkflowRole) => {
     if (!onUpdateMemberRole) {
       setMemberAccessError('Workspace member access management is unavailable.')
       return
@@ -269,8 +291,8 @@ const WorkspaceTab = ({
                     />
                     {member.membershipRole !== 'owner' && (
                       <RoleBadge
-                        role={member.workflowRole === 'qa' ? 'qa' : 'developer'}
-                        label={member.workflowRole === 'qa' ? 'QA' : 'Developer'}
+                        role={getWorkflowRoleValue(member.workflowRole)}
+                        label={getWorkflowRoleLabel(member.workflowRole)}
                         size="sm"
                       />
                     )}
@@ -299,13 +321,14 @@ const WorkspaceTab = ({
                         <select
                           id={`memberRole-${member.id}`}
                           className="cabinet-inline-select"
-                          value={member.workflowRole === 'qa' ? 'qa' : 'developer'}
+                          value={getWorkflowRoleValue(member.workflowRole)}
                           onClick={(event) => event.stopPropagation()}
                           onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-                            void handleUpdateMemberRole(member.id, event.target.value as 'developer' | 'qa')
+                            void handleUpdateMemberRole(member.id, event.target.value as WorkspaceWorkflowRole)
                           }}
                           disabled={updatingMemberId === member.id || removingMemberId === member.id}
                         >
+                          <option value="lead">Lead</option>
                           <option value="developer">Developer</option>
                           <option value="qa">QA</option>
                         </select>
@@ -416,6 +439,7 @@ const WorkspaceTab = ({
                   onChange={(event: ChangeEvent<HTMLSelectElement>) => onInviteRoleChange(event.target.value)}
                   disabled={isWorkspaceInviteLoading}
                 >
+                  <option value="lead">Lead</option>
                   <option value="developer">Developer</option>
                   <option value="qa">QA</option>
                 </select>
@@ -451,7 +475,7 @@ const WorkspaceTab = ({
                         <div>
                           <div className="cabinet-invite-row__email">{invite.email}</div>
                           <div className="cabinet-invite-row__meta">
-                            {invite.workflowRole === 'qa' ? 'QA access' : 'Developer access'}
+                            {getWorkflowRoleLabel(invite.workflowRole)} access
                           </div>
                         </div>
                       </div>

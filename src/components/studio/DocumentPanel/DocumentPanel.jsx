@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Blocks, Brush, Layers3, Sparkles } from 'lucide-react'
+import { Brush, Clock3, Eye, EyeOff, Image as ImageIcon, Lock, LockOpen, Sparkles, Trash2, Type } from 'lucide-react'
 import { CANVAS_DIMENSIONS } from '../../shared/utils/constants'
 import { formatFileSize } from '../../shared/utils/helpers'
 import './DocumentPanel.css'
 
 const DocumentPanel = ({
   totalCreativeSize,
-  onShowLayers,
   onShowJSEditor,
+  onShowTimelineEditor,
   onShowCSSEditor,
   selectedImageId,
   sceneBackground,
@@ -16,6 +16,14 @@ const DocumentPanel = ({
   onSceneBackgroundChange,
   onSceneBorderStyleChange,
   onSceneBorderColorChange,
+  onSelectLayer,
+  onToggleLayerVisibility,
+  onToggleLayerLock,
+  onDeleteLayer,
+  onLayerDragStart,
+  onLayerDragOver,
+  onLayerDragEnd,
+  draggedLayerIndex,
   screenFormat = 'landscape',
   images = []
 }) => {
@@ -44,35 +52,98 @@ const DocumentPanel = ({
     setBorderColorInputValue(sceneBorderColor || '#000000')
   }, [sceneBorderColor])
 
+  const orderedLayers = [...images].sort((leftLayer, rightLayer) => (rightLayer.zIndex || 0) - (leftLayer.zIndex || 0))
+
   return (
     <aside className="studio-sidebar studio-document-shell">
       <div className="studio-tab-content">
         <div className="studio-document-panel">
           <section className="studio-document-section">
             <div className="document-section-heading">
-              <span className="studio-section-title">Scene background</span>
+              <span className="studio-section-title">Scene layers</span>
+              <span className="studio-section-value">{images.length}</span>
             </div>
 
-            <div className="document-metric-grid">
-              <div className="document-metric-card">
-                <span>Fill</span>
-                <strong>{backgroundInputValue || '#ffffff'}</strong>
-              </div>
+            {orderedLayers.length > 0 ? (
+              <div className="document-layer-list document-layer-list--compact">
+                {orderedLayers.map((layer, index) => {
+                  const LayerIcon = layer.type === 'text' ? Type : ImageIcon
+                  const isSelected = selectedImageId === layer.id
+                  const isVisible = layer.visible !== false
+                  const isLocked = Boolean(layer.locked)
 
-              <div className="document-metric-card">
-                <span>Border</span>
-                <strong>{sceneBorderStyle === 'none' ? 'Off' : sceneBorderStyle}</strong>
+                  return (
+                    <div
+                      key={layer.id}
+                      className={`document-layer-item ${isSelected ? 'active' : ''} ${layer.visible === false ? 'muted' : ''} ${draggedLayerIndex === layer.zIndex ? 'dragging' : ''}`}
+                      draggable={!isLocked}
+                      onDragStart={(event) => onLayerDragStart?.(event, layer.zIndex)}
+                      onDragOver={(event) => onLayerDragOver?.(event, layer.zIndex)}
+                      onDragEnd={onLayerDragEnd}
+                      onClick={() => onSelectLayer?.(layer.id)}
+                    >
+                      <span className="document-layer-index">{index + 1}</span>
+                      <span className="document-layer-icon">
+                        <LayerIcon size={13} />
+                      </span>
+                      <span className="document-layer-copy">
+                        <strong>{layer.name || 'Untitled layer'}</strong>
+                        <small>
+                          {layer.type === 'text' ? 'Text' : 'Image'}
+                          {layer.locked ? ' · locked' : ''}
+                          {layer.visible === false ? ' · hidden' : ''}
+                        </small>
+                      </span>
+                      <span className="document-layer-actions">
+                        <button
+                          type="button"
+                          className={`document-layer-action ${!isVisible ? 'muted' : ''}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onToggleLayerVisibility?.(layer.id)
+                          }}
+                          title={isVisible ? 'Hide layer' : 'Show layer'}
+                          aria-label={isVisible ? 'Hide layer' : 'Show layer'}
+                        >
+                          {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
+                        </button>
+                        <button
+                          type="button"
+                          className={`document-layer-action ${isLocked ? 'locked' : ''}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onToggleLayerLock?.(layer.id)
+                          }}
+                          title={isLocked ? 'Unlock layer' : 'Lock layer'}
+                          aria-label={isLocked ? 'Unlock layer' : 'Lock layer'}
+                        >
+                          {isLocked ? <Lock size={13} /> : <LockOpen size={13} />}
+                        </button>
+                        <button
+                          type="button"
+                          className="document-layer-action danger"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onDeleteLayer?.(layer.id)
+                          }}
+                          title="Delete layer"
+                          aria-label="Delete layer"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
+            ) : (
+              <div className="document-empty-state">No layers on the canvas yet.</div>
+            )}
+          </section>
 
-              <div className="document-metric-card">
-                <span>Border color</span>
-                <strong>{sceneBorderStyle === 'none' ? 'None' : borderColorInputValue}</strong>
-              </div>
-
-              <div className="document-metric-card">
-                <span>Radius</span>
-                <strong>18px</strong>
-              </div>
+          <section className="studio-document-section">
+            <div className="document-section-heading">
+              <span className="studio-section-title">Scene background</span>
             </div>
 
             <div className="document-control-stack">
@@ -219,13 +290,13 @@ const DocumentPanel = ({
             </div>
 
             <div className="document-shortcuts">
-              <button type="button" className="document-shortcut-card" onClick={onShowLayers}>
+              <button type="button" className="document-shortcut-card" onClick={onShowTimelineEditor}>
                 <span className="document-shortcut-icon">
-                  <Layers3 size={16} />
+                  <Clock3 size={16} />
                 </span>
                 <span className="document-shortcut-copy">
-                  <strong>Layers</strong>
-                  <small>Manage stacking and naming</small>
+                  <strong>Visual timeline</strong>
+                  <small>Elements, presets, timing</small>
                 </span>
               </button>
 
@@ -249,15 +320,6 @@ const DocumentPanel = ({
                 </span>
               </button>
 
-              <div className="document-shortcut-card passive">
-                <span className="document-shortcut-icon">
-                  <Blocks size={16} />
-                </span>
-                <span className="document-shortcut-copy">
-                  <strong>Current selection</strong>
-                  <small>{selectedImageId ? 'Layer is selected' : 'No layer selected'}</small>
-                </span>
-              </div>
             </div>
           </section>
         </div>

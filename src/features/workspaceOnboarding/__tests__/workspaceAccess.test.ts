@@ -3,6 +3,7 @@ import {
   getWorkspacePaymentConfirmationRemainingSeconds,
   isWorkspacePaymentFailureStatus,
   isWorkspacePaymentConfirmationDelayed,
+  isWorkspacePaymentConfirmationExpired,
   resolvePostAuthDestination,
   resolveWorkspaceCheckoutAccess,
   selectDefaultWorkspaceAccess
@@ -117,6 +118,22 @@ describe('workspaceAccess', () => {
       isWorkspacePaymentConfirmationDelayed({
         startedAt: 1_000,
         now: 30_000
+      })
+    ).toBe(false)
+  })
+
+  it('marks checkout confirmation as expired after the 3 minute window', () => {
+    expect(
+      isWorkspacePaymentConfirmationExpired({
+        startedAt: 1_000,
+        now: 181_000
+      })
+    ).toBe(true)
+
+    expect(
+      isWorkspacePaymentConfirmationExpired({
+        startedAt: 1_000,
+        now: 120_000
       })
     ).toBe(false)
   })

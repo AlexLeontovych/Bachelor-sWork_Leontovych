@@ -9,7 +9,8 @@ import type {
   WorkspaceJoinCredentialsSummary,
   WorkspaceMember,
   WorkspacePayment,
-  WorkspacePlanType
+  WorkspacePlanType,
+  WorkspaceWorkflowRole
 } from '../features/workspaceOnboarding/types'
 import { validateWorkspaceJoinRequest } from '../features/workspaceOnboarding/workspaceJoinCredentials'
 import { workspacePlanTypeSchema } from '../features/workspaceOnboarding/workspacePlans'
@@ -18,7 +19,9 @@ import { getCurrentProfile } from './authService'
 
 const logger = createLogger({ scope: 'workspaceService' })
 
-const inviteWorkflowRoleSchema = z.enum(['developer', 'qa'])
+type AssignableWorkspaceWorkflowRole = Exclude<WorkspaceWorkflowRole, null>
+
+const inviteWorkflowRoleSchema = z.enum(['developer', 'qa', 'lead'])
 
 const createInviteSchema = z.object({
   workspaceId: z.string().uuid(),
@@ -28,6 +31,12 @@ const createInviteSchema = z.object({
 
 const paymentSessionResponseSchema = z.object({
   checkoutUrl: z.string().url(),
+  orderId: z.string().min(1),
+  paymentId: z.string().uuid()
+})
+const expiredWorkspacePaymentsResponseSchema = z.number().int().nonnegative()
+const testPaymentSessionResponseSchema = z.object({
+  workspaceId: z.string().uuid(),
   orderId: z.string().min(1),
   paymentId: z.string().uuid()
 })
@@ -85,7 +94,7 @@ const joinWorkspaceResultSchema = z.object({
   workspaceName: z.string().min(1),
   workspaceType: workspacePlanTypeSchema,
   workspaceRole: z.enum(['owner', 'member']),
-  workflowRole: z.enum(['developer', 'qa']),
+  workflowRole: inviteWorkflowRoleSchema,
   ownerUserId: z.string().uuid()
 })
 const pendingWorkspaceJoinRequestSchema = z.object({
@@ -154,6 +163,21 @@ const resolveFunctionErrorMessage = async (error: unknown, fallbackMessage: stri
   }
 
   return error instanceof Error && error.message ? error.message : fallbackMessage
+}
+
+const expireStaleWorkspacePayments = async (): Promise<number> => {
+  try {
+    const { data, error } = await supabase.rpc('expire_stale_workspace_payments')
+
+    if (error) {
+      throw error
+    }
+
+    return expiredWorkspacePaymentsResponseSchema.parse(data ?? 0)
+  } catch (error) {
+    logger.warn('Unable to expire stale workspace payments before checkout.', { error })
+    return 0
+  }
 }
 
 const getAuthenticatedUser = async () => {
@@ -416,7 +440,7 @@ export const getWorkspaceInvites = async (workspaceId: string): Promise<Workspac
 /**
  * Creates a pending email invite for the active team workspace.
  *
- * @param {{ workspaceId: string, email: string, workflowRole: 'developer' | 'qa' }} input
+ * @param {{ workspaceId: string, email: string, workflowRole: 'developer' | 'qa' | 'lead' }} input
  * @returns {Promise<WorkspaceInvite>}
  *
  * @example
@@ -425,7 +449,7 @@ export const getWorkspaceInvites = async (workspaceId: string): Promise<Workspac
 export const createWorkspaceInvite = async (input: {
   workspaceId: string
   email: string
-  workflowRole: 'developer' | 'qa'
+  workflowRole: AssignableWorkspaceWorkflowRole
 }): Promise<WorkspaceInvite> => {
   try {
     const validatedInput = createInviteSchema.parse(input)
@@ -512,7 +536,7 @@ export const revokeWorkspaceInvite = async (inviteId: string): Promise<void> => 
 /**
  * Updates a non-owner workspace member workflow role.
  *
- * @param {{ membershipId: string, workflowRole: 'developer' | 'qa' }} input
+ * @param {{ membershipId: string, workflowRole: 'developer' | 'qa' | 'lead' }} input
  * @returns {Promise<void>}
  *
  * @example
@@ -520,7 +544,7 @@ export const revokeWorkspaceInvite = async (inviteId: string): Promise<void> => 
  */
 export const updateWorkspaceMemberRole = async (input: {
   membershipId: string
-  workflowRole: 'developer' | 'qa'
+  workflowRole: AssignableWorkspaceWorkflowRole
 }): Promise<void> => {
   try {
     const validatedInput = workspaceMemberRoleUpdateSchema.parse(input)
@@ -738,7 +762,7 @@ export const getWorkspaceJoinRequestDetails = async (input: {
 /**
  * Accepts or declines a workspace join request submitted through shared credentials.
  *
- * @param {{ requestId: string, action: 'accept' | 'decline', workflowRole?: 'developer' | 'qa' }} input
+ * @param {{ requestId: string, action: 'accept' | 'decline', workflowRole?: 'developer' | 'qa' | 'lead' }} input
  * @returns {Promise<z.infer<typeof workspaceJoinRequestDecisionResultSchema>>}
  *
  * @example
@@ -839,6 +863,8 @@ export const createWorkspaceCheckoutSession = async (
 ): Promise<{ checkoutUrl: string; orderId: string; paymentId: string }> => {
   try {
     const validatedPlanType = workspacePlanTypeSchema.parse(planType)
+    await expireStaleWorkspacePayments()
+
     const { data, error } = await supabase.functions.invoke('create-payment-session', {
       body: {
         planType: validatedPlanType
@@ -854,6 +880,58 @@ export const createWorkspaceCheckoutSession = async (
     const errorMessage = await resolveFunctionErrorMessage(error, 'Unable to start the payment session.')
     logger.error('Failed to create the workspace checkout session.', { planType, error, errorMessage })
     throw new Error(errorMessage)
+  }
+}
+
+/**
+ * Creates a temporary test payment and immediately activates the selected workspace plan.
+ *
+ * @param {WorkspacePlanType} planType
+ * @returns {Promise<{ workspaceId: string, orderId: string, paymentId: string }>}
+ *
+ * @example
+ * const testPayment = await createWorkspaceTestPaymentSession('team')
+ */
+export const createWorkspaceTestPaymentSession = async (
+  planType: WorkspacePlanType
+): Promise<{ workspaceId: string; orderId: string; paymentId: string }> => {
+  const validatedPlanType = workspacePlanTypeSchema.parse(planType)
+
+  try {
+    const { data, error } = await supabase.functions.invoke('create-test-payment-session', {
+      body: {
+        planType: validatedPlanType
+      }
+    })
+
+    if (error) {
+      throw error
+    }
+
+    return testPaymentSessionResponseSchema.parse(data)
+  } catch (error) {
+    logger.warn('Falling back to the database test payment RPC.', { planType, error })
+
+    try {
+      const { data, error: rpcError } = await supabase.rpc('create_test_workspace_payment', {
+        p_plan_type: validatedPlanType
+      })
+
+      if (rpcError) {
+        throw rpcError
+      }
+
+      return testPaymentSessionResponseSchema.parse(data)
+    } catch (rpcError) {
+      const errorMessage = await resolveFunctionErrorMessage(rpcError, 'Unable to activate the test payment.')
+      logger.error('Failed to create the workspace test payment session.', {
+        planType,
+        edgeFunctionError: error,
+        rpcError,
+        errorMessage
+      })
+      throw new Error(errorMessage)
+    }
   }
 }
 

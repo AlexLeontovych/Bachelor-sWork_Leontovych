@@ -429,11 +429,22 @@
 }
 
 .cabinet-workspace-overview {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
   flex-wrap: wrap;
+  overflow: visible;
+}
+
+.cabinet-workspace-overview .ui-workspace-switcher {
+  z-index: 30;
+}
+
+.cabinet-workspace-overview .ui-workspace-switcher__menu {
+  z-index: 5000;
 }
 
 .cabinet-workspace-overview__main {

@@ -61,6 +61,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0;
 }
 
@@ -116,13 +117,18 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 12px;
+  gap: 7px;
+  padding: 7px 8px;
+  border-radius: 10px;
   border: 1px solid rgba(144, 164, 208, 0.08);
   background: rgba(255, 255, 255, 0.02);
   color: inherit;
   text-align: left;
+  cursor: grab;
+}
+
+.document-layer-item:active {
+  cursor: grabbing;
 }
 
 .document-layer-item.active {
@@ -130,20 +136,48 @@
   background: rgba(108, 158, 255, 0.12);
 }
 
+.document-layer-item.muted {
+  opacity: 0.58;
+}
+
+.document-layer-item.dragging {
+  opacity: 0.5;
+}
+
 .document-layer-index {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   display: grid;
   place-items: center;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   flex-shrink: 0;
 }
 
+.document-layer-icon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px solid rgba(108, 158, 255, 0.16);
+  background: rgba(108, 158, 255, 0.08);
+  color: #dce8ff;
+  flex-shrink: 0;
+}
+
+.document-layer-list--compact {
+  min-height: 256px;
+  max-height: 256px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
 .document-layer-copy {
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -152,18 +186,61 @@
 
 .document-layer-copy strong {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .document-layer-copy small,
 .document-empty-state {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.45;
 }
 
+.document-layer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.document-layer-action {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(144, 164, 208, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-subtle);
+  cursor: pointer;
+}
+
+.document-layer-action:hover {
+  color: var(--text-primary);
+  border-color: rgba(144, 164, 208, 0.24);
+}
+
+.document-layer-action.muted {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.document-layer-action.locked {
+  color: #f2d28b;
+  border-color: rgba(212, 175, 122, 0.22);
+  background: rgba(212, 175, 122, 0.08);
+}
+
+.document-layer-action.danger {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.2);
+  background: rgba(248, 113, 113, 0.07);
+}
+
 .document-empty-state {
+  min-height: 256px;
   padding: 14px;
   border-radius: 12px;
   border: 1px dashed rgba(144, 164, 208, 0.16);

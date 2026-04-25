@@ -1,6 +1,6 @@
 export type WorkspacePlanType = 'personal' | 'team'
 export type WorkspaceRole = 'owner' | 'member'
-export type WorkspaceWorkflowRole = 'developer' | 'qa' | null
+export type WorkspaceWorkflowRole = 'developer' | 'qa' | 'lead' | null
 export type WorkspaceStatus = 'pending_payment' | 'active' | 'archived'
 export type WorkspacePaymentStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'cancelled'
 export type WorkspaceView = 'projects' | 'onboarding'

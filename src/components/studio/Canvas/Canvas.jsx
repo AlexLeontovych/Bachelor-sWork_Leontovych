@@ -22,12 +22,17 @@ const Canvas = ({
   onTextEdit,
   onTextChange,
   onTextBlur,
-  screenFormat
+  screenFormat,
+  zoom = 1,
+  onZoomIn,
+  onZoomOut,
+  onZoomReset
 }) => {
   const canvasDimensions = CANVAS_DIMENSIONS[screenFormat] || CANVAS_DIMENSIONS.landscape
   const horizontalMarks = Array.from({ length: 16 }, (_, index) => index * 100)
   const verticalMarks = Array.from({ length: 8 }, (_, index) => index * 100)
   const orderedImages = [...images].sort((leftImage, rightImage) => (leftImage.zIndex || 0) - (rightImage.zIndex || 0))
+  const zoomPercentage = Math.round(zoom * 100)
 
   return (
     <div className="studio-canvas-container">
@@ -60,7 +65,8 @@ const Canvas = ({
                 width: `${canvasDimensions.width}px`,
                 height: `${canvasDimensions.height}px`,
                 backgroundColor: sceneBackground,
-                border: sceneBorderStyle !== 'none' ? `1px ${sceneBorderStyle} ${sceneBorderColor}` : 'none'
+                border: sceneBorderStyle !== 'none' ? `1px ${sceneBorderStyle} ${sceneBorderColor}` : 'none',
+                transform: `scale(${zoom})`
               }}
             >
               <div className="canvas-grid">
@@ -70,15 +76,20 @@ const Canvas = ({
                   <span className="canvas-guide canvas-guide-vertical" />
                 </div>
 
-                {orderedImages.map((image, index) => (
+                {orderedImages.map((image, index) => {
+                  const isLocked = Boolean(image.locked)
+                  const isHidden = image.visible === false
+
+                  return (
                   <div
                     key={image.id}
-                    className={`canvas-image-wrapper ${selectedImageId === image.id ? 'selected' : ''} ${draggingImageId === image.id ? 'dragging' : ''}`}
+                    className={`canvas-image-wrapper ${selectedImageId === image.id ? 'selected' : ''} ${draggingImageId === image.id ? 'dragging' : ''} ${isLocked ? 'locked' : ''} ${isHidden ? 'hidden' : ''}`}
                     style={{
                       position: 'absolute',
                       left: `${image.x || 0}px`,
                       top: `${image.y || 0}px`,
-                      zIndex: image.zIndex || index
+                      zIndex: image.zIndex || index,
+                      display: isHidden ? 'none' : 'block'
                     }}
                   >
                     {image.type === 'text' ? (
@@ -86,12 +97,12 @@ const Canvas = ({
                         id={image.elementId || image.id}
                         className="canvas-text"
                         data-image-index={index}
-                        contentEditable={editingTextId === image.id}
+                        contentEditable={!isLocked && editingTextId === image.id}
                         suppressContentEditableWarning={true}
                         draggable={false}
                         style={{
                           width: image.width ? `${image.width}px` : 'auto',
-                          cursor: editingTextId === image.id ? 'text' : (draggingImageId === image.id ? 'grabbing' : 'move'),
+                          cursor: isLocked ? 'not-allowed' : (editingTextId === image.id ? 'text' : (draggingImageId === image.id ? 'grabbing' : 'move')),
                           display: 'block',
                           opacity: image.opacity !== undefined ? image.opacity : 1,
                           transform: image.rotation ? `rotate(${image.rotation}deg)` : 'none',
@@ -113,9 +124,15 @@ const Canvas = ({
                         }}
                         onDoubleClick={(event) => {
                           event.stopPropagation()
+                          if (isLocked) {
+                            return
+                          }
                           onTextEdit(image.id)
                         }}
                         onMouseDown={(event) => {
+                          if (isLocked) {
+                            return
+                          }
                           if (!event.target.closest('.resize-handle') && editingTextId !== image.id) {
                             onImageDragStart(event, image.id)
                           }
@@ -140,7 +157,7 @@ const Canvas = ({
                         style={{
                           width: image.width ? `${image.width}px` : 'auto',
                           height: image.height ? `${image.height}px` : 'auto',
-                          cursor: draggingImageId === image.id ? 'grabbing' : 'move',
+                          cursor: isLocked ? 'not-allowed' : (draggingImageId === image.id ? 'grabbing' : 'move'),
                           display: 'block',
                           opacity: image.opacity !== undefined ? image.opacity : 1,
                           transform: image.rotation ? `rotate(${image.rotation}deg)` : 'none',
@@ -148,6 +165,9 @@ const Canvas = ({
                         }}
                         onClick={() => onImageClick(image.id)}
                         onMouseDown={(event) => {
+                          if (isLocked) {
+                            return
+                          }
                           if (!event.target.closest('.resize-handle')) {
                             onImageDragStart(event, image.id)
                           }
@@ -155,7 +175,7 @@ const Canvas = ({
                       />
                     )}
 
-                    {selectedImageId === image.id && (
+                    {selectedImageId === image.id && !isLocked && (
                       <>
                         <div className="resize-handle resize-handle-nw" onMouseDown={(event) => onResizeStart(event, image.id, 'nw')} />
                         <div className="resize-handle resize-handle-ne" onMouseDown={(event) => onResizeStart(event, image.id, 'ne')} />
@@ -168,16 +188,19 @@ const Canvas = ({
                       </>
                     )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </div>
         </div>
 
         <div className="canvas-zoom-chip">
-          <button type="button" aria-label="Zoom out">−</button>
-          <span>100%</span>
-          <button type="button" aria-label="Zoom in">+</button>
+          <button type="button" onClick={onZoomOut} aria-label="Zoom out">−</button>
+          <button type="button" className="canvas-zoom-value" onClick={onZoomReset} aria-label="Reset zoom to 100%">
+            {zoomPercentage}%
+          </button>
+          <button type="button" onClick={onZoomIn} aria-label="Zoom in">+</button>
           <span className="canvas-zoom-divider" />
           <span>{canvasDimensions.width} × {canvasDimensions.height}</span>
         </div>

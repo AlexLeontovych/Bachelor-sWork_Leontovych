@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Boxes,
   Building2,
+  Contact,
   FolderKanban,
   Hammer,
+  Plus,
   Rocket,
-  Settings,
   Shield,
   User as UserIcon,
   Users
@@ -46,6 +47,7 @@ const UserCabinet = ({
   onClearNotifications,
   onWorkspaceChange,
   onOpenWorkspaceJoin,
+  onCreateTeamWorkspace,
   onCreateWorkspaceInvite,
   onRevokeWorkspaceInvite,
   onUpdateWorkspaceMemberRole,
@@ -505,6 +507,7 @@ const UserCabinet = ({
       ? { id: 'users', label: `User Management (${allUsers.length})`, icon: Shield }
       : null
   ].filter(Boolean)
+  const visibleActiveTab = tabItems.some((item) => item.id === activeTab) ? activeTab : 'profile'
 
   if (loading) {
     return (
@@ -545,16 +548,31 @@ const UserCabinet = ({
         onMarkAllNotificationsRead={onMarkAllNotificationsRead}
         onClearNotifications={onClearNotifications}
         searchPlaceholder={null}
-        actions={onOpenWorkspaceJoin ? (
-          <button
-            type="button"
-            className="ui-page-header__workspace-settings-button ui-page-header__workspace-settings-button--join"
-            onClick={onOpenWorkspaceJoin}
-            aria-label="Join a team workspace"
-            title="Join a team workspace"
-          >
-            <Settings size={16} />
-          </button>
+        actions={(onCreateTeamWorkspace || onOpenWorkspaceJoin) ? (
+          <div className="ui-page-header__workspace-actions">
+            {onOpenWorkspaceJoin && (
+              <button
+                type="button"
+                className="ui-page-header__workspace-settings-button ui-page-header__workspace-settings-button--join"
+                onClick={onOpenWorkspaceJoin}
+                aria-label="Join a team workspace"
+                title="Join a team workspace"
+              >
+                <Contact size={16} />
+              </button>
+            )}
+            {onCreateTeamWorkspace && (
+              <button
+                type="button"
+                className="ui-page-header__workspace-settings-button ui-page-header__workspace-settings-button--create"
+                onClick={onCreateTeamWorkspace}
+                aria-label="Create your own team workspace"
+                title="Create your own team workspace"
+              >
+                <Plus size={17} />
+              </button>
+            )}
+          </div>
         ) : null}
       />
 
@@ -594,13 +612,13 @@ const UserCabinet = ({
           <section className="user-cabinet-tabs-wrap">
             <TabBar
               items={tabItems}
-              active={activeTab}
+              active={visibleActiveTab}
               onChange={setActiveTab}
             />
           </section>
 
           <section ref={contentRef} className="user-cabinet-content">
-            {activeTab === 'profile' && (
+            {visibleActiveTab === 'profile' && (
               <ProfileTab
                 profile={profile}
                 projects={projects}
@@ -619,7 +637,7 @@ const UserCabinet = ({
               />
             )}
 
-            {activeTab === 'workspace' && activeWorkspace && (
+            {visibleActiveTab === 'workspace' && activeWorkspace && (
               <WorkspaceTab
                 activeWorkspace={activeWorkspace}
                 accessibleWorkspaces={accessibleWorkspaces}
@@ -644,7 +662,7 @@ const UserCabinet = ({
               />
             )}
 
-            {activeTab === 'projects' && (
+            {visibleActiveTab === 'projects' && (
               <ProjectsTab
                 projects={projects}
                 profile={profile}
@@ -657,7 +675,7 @@ const UserCabinet = ({
               />
             )}
 
-            {activeTab === 'member' && selectedWorkspaceMember && (
+            {visibleActiveTab === 'member' && selectedWorkspaceMember && (
               <MemberProfileTab
                 member={selectedWorkspaceMember}
                 projects={selectedWorkspaceMemberProjects}
@@ -668,7 +686,7 @@ const UserCabinet = ({
               />
             )}
 
-            {activeTab === 'users' && profile?.role === 'admin' && (
+            {visibleActiveTab === 'users' && profile?.role === 'admin' && (
               <UsersTab
                 loadingUsers={loadingUsers}
                 allUsers={allUsers}

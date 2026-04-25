@@ -3,54 +3,10 @@ import Editor from '@monaco-editor/react'
 import { Brush, Eye, X } from 'lucide-react'
 import './CSSEditor.css'
 
-const CSSEditor = ({ cssCode, onCssChange, onApply, onClose, images = [], sceneBackground = '#0b1226' }) => {
+const CSSEditor = ({ cssCode, onCssChange, onApply, onClose }) => {
   const handleApply = () => {
     onApply()
   }
-
-  const textLayers = useMemo(() => {
-    return images.filter((image) => image.type === 'text')
-  }, [images])
-
-  const tokenCards = useMemo(() => {
-    return [
-      { label: 'surface/navy-deep', value: sceneBackground || '#0B1226' },
-      { label: 'brand/violet', value: '#6C49C9' },
-      { label: 'brand/blue-glow', value: '#6C9EFF' },
-      { label: 'brand/gold', value: '#D4AF7A' },
-      { label: 'surface/stage', value: '#1A2450' },
-      { label: 'accent/rose', value: '#F472B6' }
-    ]
-  }, [sceneBackground])
-
-  const typographyRamp = useMemo(() => {
-    const primaryText = textLayers[0]?.text || 'Precision crafted'
-    const secondaryText = textLayers[1]?.text || 'Elegant and engineered'
-    const bodyText = textLayers[2]?.text || 'Clear, considered supporting copy.'
-
-    return [
-      {
-        label: 'display/xl',
-        size: `${textLayers[0]?.fontSize || 64}px`,
-        sample: primaryText
-      },
-      {
-        label: 'display/md',
-        size: `${textLayers[1]?.fontSize || 40}px`,
-        sample: secondaryText
-      },
-      {
-        label: 'body/lg',
-        size: `${textLayers[2]?.fontSize || 18}px`,
-        sample: bodyText
-      },
-      {
-        label: 'body/md',
-        size: '14px',
-        sample: 'Tight operational interface text used at default size.'
-      }
-    ]
-  }, [textLayers])
 
   const cssPreview = useMemo(() => {
     const trimmedLines = cssCode
@@ -83,7 +39,7 @@ const CSSEditor = ({ cssCode, onCssChange, onApply, onClose, images = [], sceneB
             </span>
             <h2 className="editor-modal-title">Visual presentation rules</h2>
             <p className="editor-modal-description">
-              Design tokens, typography ramps, and state rules that shape how every layer renders.
+              Style rules that shape how every layer renders.
             </p>
           </div>
           <button type="button" className="editor-modal-close" onClick={onClose}>
@@ -94,34 +50,6 @@ const CSSEditor = ({ cssCode, onCssChange, onApply, onClose, images = [], sceneB
         <div className="editor-modal-content css-editor-content">
           <div className="css-editor-layout">
             <div className="css-editor-main">
-              <section className="css-editor-section">
-                <div className="css-editor-section-heading">Design tokens</div>
-                <div className="css-token-grid">
-                  {tokenCards.map((token) => (
-                    <div key={token.label} className="css-token-card">
-                      <div className="css-token-swatch" style={{ background: token.value }} />
-                      <strong>{token.label}</strong>
-                      <span>{token.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="css-editor-section">
-                <div className="css-editor-section-heading">Typography ramp</div>
-                <div className="css-typography-ramp">
-                  {typographyRamp.map((row) => (
-                    <div key={`${row.label}-${row.size}`} className="css-typography-row">
-                      <div className="css-typography-meta">
-                        <span>{row.label}</span>
-                        <small>{row.size}</small>
-                      </div>
-                      <div className="css-typography-sample">{row.sample}</div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
               <section className="css-editor-section">
                 <div className="css-editor-section-heading">Style overrides</div>
                 <div className="editor-modal-workspace css-editor-workspace">

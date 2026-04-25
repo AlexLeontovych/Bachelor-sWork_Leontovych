@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { gsap } from 'gsap'
-import { AlertTriangle, Image as ImageIcon, Type, X } from 'lucide-react'
+import GIF from 'gif.js'
+import gifWorkerUrl from 'gif.js/dist/gif.worker.js?url'
+import { AlertTriangle, CheckCircle2, Image as ImageIcon, MessageSquareText, Type, X } from 'lucide-react'
 import ProjectModal from './components/project/ProjectModal/ProjectModal'
 import ProjectsList from './components/project/ProjectsList/ProjectsList'
 import MenuBar from './components/studio/MenuBar/MenuBar'
@@ -9,7 +11,9 @@ import InspectorPanel from './components/studio/InspectorPanel/InspectorPanel'
 import Canvas from './components/studio/Canvas/Canvas'
 import DocumentPanel from './components/studio/DocumentPanel/DocumentPanel'
 import UnsavedChangesModal from './components/studio/UnsavedChangesModal/UnsavedChangesModal'
+import ProjectPreview from './components/preview/ProjectPreview'
 import JSEditor from './components/editors/JSEditor/JSEditor'
+import TimelineEditor from './components/editors/TimelineEditor/TimelineEditor'
 import CSSEditor from './components/editors/CSSEditor/CSSEditor'
 import LayersWindow from './components/layers/LayersWindow/LayersWindow'
 import AuthForm from './components/auth/AuthForm/AuthForm'
@@ -18,6 +22,7 @@ import UserCabinet from './components/user/UserCabinet/UserCabinet'
 import WorkspaceInviteModal from './components/workspace/WorkspaceInviteModal/WorkspaceInviteModal'
 import WorkspaceJoinModal from './components/workspace/WorkspaceJoinModal/WorkspaceJoinModal'
 import WorkspaceJoinRequestModal from './components/workspace/WorkspaceJoinRequestModal/WorkspaceJoinRequestModal'
+import WorkspacePlanPurchaseModal from './components/workspace/WorkspacePlanPurchaseModal/WorkspacePlanPurchaseModal'
 import WorkspaceOnboardingView from './features/workspaceOnboarding/WorkspaceOnboardingView'
 import { DEFAULT_CODE, DEFAULT_PROJECT_STATUS } from './components/shared/utils/constants'
 import { getWorkspacePlan } from './features/workspaceOnboarding/workspacePlans'
@@ -33,7 +38,9 @@ import {
   canDeleteProject as canDeleteProjectByWorkflow,
   canManageProject,
   getProjectAccessMessage,
-  getProjectQaId
+  getProjectQaFeedbackNote,
+  getProjectQaId,
+  getWorkflowTeamRole
 } from './components/shared/utils/projectWorkflow'
 import { getCurrentProfile, getSession, onAuthStateChange, signOut } from './services/authService'
 import { createProject, deleteProject, getAccessibleProjects, updateProject, transformProjectFromDB } from './services/projectService'
@@ -41,6 +48,7 @@ import {
   claimPendingWorkspaceInvites,
   createWorkspaceCheckoutSession,
   createWorkspaceInvite,
+  createWorkspaceTestPaymentSession,
   getCurrentWorkspaceProfile,
   getWorkspaceInviteDetails,
   getWorkspaceJoinRequestDetails,
@@ -67,6 +75,7 @@ import {
   getStoredPendingPaymentStartedAt,
   getStoredActiveWorkspaceId,
   getStoredPendingPaymentOrderId,
+  isWorkspacePaymentConfirmationExpired,
   isWorkspacePaymentFailureStatus,
   resolvePostAuthDestination,
   resolveWorkspaceCheckoutAccess,
@@ -97,8 +106,12 @@ const getViewFromPath = (pathname) => {
     return 'cabinet'
   }
 
-  if (/^\/projects\/[^/]+\/editor$/.test(pathname)) {
+  if (/^\/projects\/[^/]+\/editor\/?$/.test(pathname)) {
     return 'editor'
+  }
+
+  if (/^\/projects\/[^/]+\/preview\/?$/.test(pathname)) {
+    return 'preview'
   }
 
   if (pathname === ROUTES.projects || pathname.startsWith('/projects')) {
@@ -109,8 +122,18 @@ const getViewFromPath = (pathname) => {
 }
 
 const getEditorProjectIdFromPath = (pathname) => {
-  const match = pathname.match(/^\/projects\/([^/]+)\/editor$/)
+  const match = pathname.match(/^\/projects\/([^/]+)\/editor\/?$/)
   return match ? decodeURIComponent(match[1]) : null
+}
+
+const getPreviewProjectIdFromPath = (pathname) => {
+  const match = pathname.match(/^\/projects\/([^/]+)\/preview\/?$/)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+const shouldPreserveAuthenticatedRoute = (pathname) => {
+  const routeView = getViewFromPath(pathname)
+  return ['projects', 'editor', 'preview', 'cabinet', 'onboarding'].includes(routeView)
 }
 
 function App() {
@@ -150,6 +173,8 @@ function App() {
   const [draggedLayerIndex, setDraggedLayerIndex] = useState(null)
   const [editingLayerId, setEditingLayerId] = useState(null)
   const [selectedImageId, setSelectedImageId] = useState(null)
+  const [copiedLayer, setCopiedLayer] = useState(null)
+  const [canvasZoom, setCanvasZoom] = useState(1)
   const [draggingImageId, setDraggingImageId] = useState(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [editingTextId, setEditingTextId] = useState(null)
@@ -158,6 +183,8 @@ function App() {
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 })
   const [showDocumentMenu, setShowDocumentMenu] = useState(false)
   const [showJSEditor, setShowJSEditor] = useState(false)
+  const [jsEditorInitialTab, setJsEditorInitialTab] = useState('logic')
+  const [showTimelineEditor, setShowTimelineEditor] = useState(false)
   const [showCSSEditor, setShowCSSEditor] = useState(false)
   const [cssCode, setCssCode] = useState('')
   const [showAddMenu, setShowAddMenu] = useState(false)
@@ -175,11 +202,17 @@ function App() {
   const [workspaceInvites, setWorkspaceInvites] = useState([])
   const [workspaceJoinCredentials, setWorkspaceJoinCredentials] = useState(null)
   const [workspaceJoinSecret, setWorkspaceJoinSecret] = useState(null)
+  const [workspaceSyncState, setWorkspaceSyncState] = useState({
+    status: typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'synced',
+    lastSyncedAt: Date.now()
+  })
   const [projectNotifications, setProjectNotifications] = useState([])
   const [workspaceInviteModal, setWorkspaceInviteModal] = useState(null)
   const [isWorkspaceInviteModalSubmitting, setIsWorkspaceInviteModalSubmitting] = useState(false)
   const [isWorkspaceJoinModalOpen, setIsWorkspaceJoinModalOpen] = useState(false)
+  const [isWorkspacePlanPurchaseModalOpen, setIsWorkspacePlanPurchaseModalOpen] = useState(false)
   const [workspaceJoinRequestModal, setWorkspaceJoinRequestModal] = useState(null)
+  const [qaFeedbackNotificationModal, setQaFeedbackNotificationModal] = useState(null)
   const [isWorkspaceJoinRequestSubmitting, setIsWorkspaceJoinRequestSubmitting] = useState(false)
   const [selectedWorkspacePlan, setSelectedWorkspacePlan] = useState('team')
   const [guestCheckoutPlan, setGuestCheckoutPlan] = useState(null)
@@ -190,6 +223,7 @@ function App() {
   )
   const [workspacePaymentError, setWorkspacePaymentError] = useState('')
   const [isStartingWorkspaceCheckout, setIsStartingWorkspaceCheckout] = useState(false)
+  const [isStartingWorkspaceTestPayment, setIsStartingWorkspaceTestPayment] = useState(false)
   const [isRefreshingWorkspacePayment, setIsRefreshingWorkspacePayment] = useState(false)
   const [isFinalizingWorkspaceActivation, setIsFinalizingWorkspaceActivation] = useState(false)
   const [isReturningToLogin, setIsReturningToLogin] = useState(false)
@@ -221,6 +255,11 @@ function App() {
   const totalCreativeSize = images.reduce((total, img) => total + (img.size || 0), 0)
   const previewRef = useRef(null)
   const timelineRef = useRef(null)
+  const copiedLayerRef = useRef(null)
+  const previousImagesRef = useRef(images)
+  const undoStackRef = useRef([])
+  const isApplyingUndoRef = useRef(false)
+  const skipNextHistoryEntryRef = useRef(false)
 
   const syncGuestMode = (nextIsGuest) => {
     isGuestRef.current = nextIsGuest
@@ -244,7 +283,7 @@ function App() {
   }
 
   const navigateToView = (nextView, options = {}) => {
-    const { replace = false, state, projectId = currentProject?.id } = options
+    const { replace = false, state, projectId = currentProject?.id, format = screenFormat, from = 'editor' } = options
     const nextPath = (() => {
       switch (nextView) {
         case 'login':
@@ -257,6 +296,8 @@ function App() {
           return ROUTES.cabinet
         case 'editor':
           return projectId ? ROUTES.editor(projectId) : ROUTES.projects
+        case 'preview':
+          return projectId ? ROUTES.preview(projectId, format, from) : ROUTES.projects
         default:
           return ROUTES.auth
       }
@@ -364,6 +405,63 @@ function App() {
     }
   }
 
+  const restoreEditorProjectState = (project) => {
+    if (!project) {
+      return
+    }
+
+    setCurrentProject(project)
+
+    if (project.images) {
+      const restoredImages = project.images.map(img => {
+        if (img.type === 'text') {
+          return img
+        }
+
+        if (img.base64) {
+          try {
+            const byteCharacters = atob(img.base64.split(',')[1] || img.base64)
+            const byteNumbers = new Array(byteCharacters.length)
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i)
+            }
+            const byteArray = new Uint8Array(byteNumbers)
+            const blob = new Blob([byteArray], { type: 'image/png' })
+            const blobUrl = URL.createObjectURL(blob)
+            return {
+              ...img,
+              url: blobUrl,
+              base64: img.base64
+            }
+          } catch (err) {
+            console.error('Error creating blob URL from base64:', err)
+            return img
+          }
+        }
+
+        if (img.url && img.url.startsWith('data:')) {
+          return {
+            ...img,
+            base64: img.url
+          }
+        }
+
+        return img
+      })
+      setImages(restoredImages)
+    } else {
+      setImages([])
+    }
+
+    setCode(project.code || DEFAULT_CODE)
+    setCssCode(project.cssCode || '')
+    setSceneBackground(project.sceneBackground || '#ffffff')
+    setSceneBorderStyle(project.sceneBorderStyle || 'none')
+    setSceneBorderColor(project.sceneBorderColor || '#000000')
+    setScreenFormat(project.screenFormat || 'landscape')
+    setIsSaved(true)
+  }
+
   useEffect(() => {
     isGuestRef.current = isGuest
   }, [isGuest])
@@ -375,6 +473,36 @@ function App() {
   useEffect(() => {
     activeWorkspaceRef.current = activeWorkspace
   }, [activeWorkspace])
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setWorkspaceSyncState({
+        status: 'syncing',
+        lastSyncedAt: Date.now()
+      })
+
+      const workspace = activeWorkspaceRef.current
+
+      if (workspace?.workspaceId && !isGuestRef.current) {
+        void loadProjects(workspace.workspaceId)
+      }
+    }
+
+    const handleOffline = () => {
+      setWorkspaceSyncState((previousState) => ({
+        ...previousState,
+        status: 'offline'
+      }))
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   useEffect(() => {
     if (!user || isGuest || !activeWorkspace?.workspaceId) {
@@ -415,6 +543,11 @@ function App() {
     }
 
     const scheduleRealtimeRefresh = (options = {}) => {
+      setWorkspaceSyncState((previousState) => ({
+        ...previousState,
+        status: navigator.onLine === false ? 'offline' : 'syncing'
+      }))
+
       if (realtimeRefreshTimeoutRef.current) {
         window.clearTimeout(realtimeRefreshTimeoutRef.current)
       }
@@ -519,8 +652,10 @@ function App() {
           await loadWorkspaceSupportData(nextWorkspace)
           await loadProjects(nextWorkspace.workspaceId)
 
-          if (view !== 'onboarding') {
+          if (view !== 'onboarding' && !shouldPreserveAuthenticatedRoute(location.pathname)) {
             navigateToView('projects', { replace: true })
+          } else if (shouldPreserveAuthenticatedRoute(location.pathname)) {
+            setView(getViewFromPath(location.pathname))
           }
           return
         }
@@ -580,7 +715,7 @@ function App() {
 
       void supabase.removeChannel(userWorkspaceAccessChannel)
     }
-  }, [user?.id, isGuest, view])
+  }, [user?.id, isGuest, view, location.pathname])
 
   useEffect(() => {
     const nextView = getViewFromPath(location.pathname)
@@ -589,7 +724,14 @@ function App() {
       const routeProjectId = getEditorProjectIdFromPath(location.pathname)
       const routeProject = projects.find((project) => String(project.id) === routeProjectId)
 
-      if (!routeProject) {
+      if (routeProject) {
+        restoreEditorProjectState(routeProject)
+      } else if (loading || isResolvingWorkspaceContext || projects.length === 0) {
+        if (nextView !== view) {
+          setView(nextView)
+        }
+        return
+      } else {
         navigateToView('projects', { replace: true })
         return
       }
@@ -598,7 +740,7 @@ function App() {
     if (nextView !== view) {
       setView(nextView)
     }
-  }, [location.pathname])
+  }, [currentProject, isResolvingWorkspaceContext, loading, location.pathname, projects, view])
 
   useEffect(() => {
     let isMounted = true
@@ -662,13 +804,32 @@ function App() {
   // Закриваємо меню при кліку поза ним
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (showDocumentMenu && !e.target.closest('.studio-menu-item')) {
+      if (showDocumentMenu && !e.target.closest('.studio-menu-nav') && !e.target.closest('.studio-menu-dropdown')) {
         setShowDocumentMenu(false)
       }
     }
     document.addEventListener('click', handleClickOutside)
     return () => document.removeEventListener('click', handleClickOutside)
   }, [showDocumentMenu])
+
+  useEffect(() => {
+    if (isApplyingUndoRef.current) {
+      isApplyingUndoRef.current = false
+      previousImagesRef.current = images
+      return
+    }
+
+    if (skipNextHistoryEntryRef.current) {
+      skipNextHistoryEntryRef.current = false
+      previousImagesRef.current = images
+      return
+    }
+
+    if (previousImagesRef.current !== images) {
+      undoStackRef.current = [...undoStackRef.current.slice(-49), previousImagesRef.current]
+      previousImagesRef.current = images
+    }
+  }, [images])
 
   // Оновлюємо ID елементів в DOM при зміні elementId
   useEffect(() => {
@@ -716,25 +877,46 @@ function App() {
     }
   }, [draggingLayersWindow, layersWindowDragOffset])
 
+  const normalizeLayerElementId = (value, fallback = 'layer') => {
+    const normalizedValue = String(value || fallback)
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[^a-zA-Z0-9-_]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .toLowerCase()
+
+    const safeValue = normalizedValue || fallback
+    return /^\d/.test(safeValue) ? `layer-${safeValue}` : safeValue
+  }
+
+  const createUniqueElementId = (baseName = 'layer', reservedIds = new Set(), ignoredLayerId = null) => {
+    const cleanId = normalizeLayerElementId(baseName)
+    const currentImages = images.filter(img => img.id !== ignoredLayerId)
+    let uniqueId = cleanId
+    let counter = 1
+
+    while (
+      reservedIds.has(uniqueId) ||
+      currentImages.some(img => img.id === uniqueId || img.elementId === uniqueId)
+    ) {
+      uniqueId = `${cleanId}-${counter}`
+      counter++
+    }
+
+    reservedIds.add(uniqueId)
+    return uniqueId
+  }
+
   const handleFiles = files => {
     const fileArray = Array.from(files || []).filter(file => file.type.startsWith('image/'))
     if (!fileArray.length) return
 
+    const reservedIds = new Set()
     const mapped = fileArray.map((file, index) => {
       // Використовуємо ім'я файлу як ім'я шару
       const fileName = file.name.replace(/\.[^/.]+$/, '') // Прибираємо розширення
       const originalName = fileName || `image-${Date.now()}-${index}`
-      
-      // Створюємо чистий ID з імені (прибираємо спецсимволи)
-      const cleanId = originalName.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase() || `image-${Date.now()}-${index}`
-      
-      // Перевіряємо унікальність ID
-      let uniqueId = cleanId
-      let counter = 1
-      while (images.some(img => img.id === uniqueId || img.elementId === uniqueId)) {
-        uniqueId = `${cleanId}-${counter}`
-        counter++
-      }
+      const uniqueId = createUniqueElementId(originalName, reservedIds)
       
       return {
         id: uniqueId,
@@ -750,7 +932,9 @@ function App() {
         trackingId: uniqueId,
         size: file.size, // Розмір файлу в байтах
         opacity: 1, // Прозорість від 0 до 1
-        rotation: 0 // Поворот у градусах від 0 до 360
+              rotation: 0, // Поворот у градусах від 0 до 360
+              visible: true,
+              locked: false
       }
     })
 
@@ -781,11 +965,92 @@ function App() {
       fontFamily: 'Arial',
       color: '#000000',
       fontWeight: 'normal',
-      textAlign: 'left'
+      textAlign: 'left',
+      visible: true,
+      locked: false
     }
     setImages(prev => [...prev, newText].map((img, idx) => ({ ...img, zIndex: idx })))
     setSelectedImageId(textId)
     setIsSaved(false) // Позначаємо проєкт як незбережений при додаванні тексту
+  }
+
+  const createUniqueLayerId = (baseName = 'layer') => {
+    const normalizedBaseName = normalizeLayerElementId(baseName)
+    let uniqueId = `${normalizedBaseName}-copy`
+    let counter = 1
+
+    while (images.some(img => img.id === uniqueId || img.elementId === uniqueId)) {
+      counter += 1
+      uniqueId = `${normalizedBaseName}-copy-${counter}`
+    }
+
+    return uniqueId
+  }
+
+  const pushImagesUndoSnapshot = () => {
+    undoStackRef.current = [...undoStackRef.current.slice(-49), images]
+    previousImagesRef.current = images
+  }
+
+  const handleCopySelectedLayer = () => {
+    const selectedLayer = images.find(img => img.id === selectedImageId)
+
+    if (!selectedLayer) {
+      return
+    }
+
+    const nextCopiedLayer = { ...selectedLayer }
+    copiedLayerRef.current = nextCopiedLayer
+    setCopiedLayer(nextCopiedLayer)
+  }
+
+  const handlePasteCopiedLayer = () => {
+    const layerToPaste = copiedLayerRef.current || copiedLayer
+
+    if (!layerToPaste) {
+      return
+    }
+
+    const canvasDimensions = screenFormat === 'portrait'
+      ? { width: 390, height: 884 }
+      : { width: 1024, height: 600 }
+    const pastedLayerId = createUniqueLayerId(layerToPaste.name || layerToPaste.id)
+    const layerWidth = layerToPaste.width || 120
+    const layerHeight = layerToPaste.height || 120
+    const pastedLayer = {
+      ...layerToPaste,
+      id: pastedLayerId,
+      name: `${layerToPaste.name || 'Layer'} copy`,
+      elementId: pastedLayerId,
+      trackingId: pastedLayerId,
+      x: Math.max(0, Math.min(canvasDimensions.width - layerWidth, (layerToPaste.x || 0) + 24)),
+      y: Math.max(0, Math.min(canvasDimensions.height - layerHeight, (layerToPaste.y || 0) + 24)),
+      zIndex: images.length,
+      visible: true,
+      locked: false
+    }
+
+    setImages(prev => [...prev, pastedLayer].map((img, idx) => ({ ...img, zIndex: idx })))
+    setSelectedImageId(pastedLayerId)
+    setIsSaved(false)
+  }
+
+  const handleUndoImagesChange = () => {
+    const previousImages = undoStackRef.current.pop()
+
+    if (!previousImages) {
+      return
+    }
+
+    isApplyingUndoRef.current = true
+    setImages(previousImages)
+    previousImagesRef.current = previousImages
+    setSelectedImageId(null)
+    setEditingTextId(null)
+    setDraggingImageId(null)
+    setResizingImageId(null)
+    setResizeHandle(null)
+    setIsSaved(false)
   }
 
   const moveLayer = (fromZIndex, toZIndex) => {
@@ -806,10 +1071,13 @@ function App() {
       zIndex: sortedImages.length - 1 - idx 
     }))
     
+    skipNextHistoryEntryRef.current = true
     setImages(updatedImages)
+    setIsSaved(false)
   }
 
   const handleLayerDragStart = (e, zIndex) => {
+    pushImagesUndoSnapshot()
     setDraggedLayerIndex(zIndex)
     e.dataTransfer.effectAllowed = 'move'
   }
@@ -825,6 +1093,57 @@ function App() {
 
   const handleLayerDragEnd = () => {
     setDraggedLayerIndex(null)
+  }
+
+  const handleZoomOut = () => {
+    setCanvasZoom(prevZoom => Math.max(0.25, Number((prevZoom - 0.1).toFixed(2))))
+  }
+
+  const handleZoomIn = () => {
+    setCanvasZoom(prevZoom => Math.min(2, Number((prevZoom + 0.1).toFixed(2))))
+  }
+
+  const handleZoomReset = () => {
+    setCanvasZoom(1)
+  }
+
+  const handleToggleLayerVisibility = (layerId) => {
+    const layer = images.find(img => img.id === layerId)
+    const nextVisible = layer?.visible === false
+
+    setImages(prev => prev.map(img => {
+      if (img.id !== layerId) {
+        return img
+      }
+
+      return {
+        ...img,
+        visible: nextVisible
+      }
+    }))
+
+    if (!nextVisible && selectedImageId === layerId) {
+      setSelectedImageId(null)
+      setEditingTextId(null)
+    }
+
+    setIsSaved(false)
+  }
+
+  const handleToggleLayerLock = (layerId) => {
+    setImages(prev => prev.map(img => (
+      img.id === layerId
+        ? { ...img, locked: !img.locked }
+        : img
+    )))
+
+    if (selectedImageId === layerId) {
+      setEditingTextId(null)
+      setDraggingImageId(null)
+      setResizingImageId(null)
+    }
+
+    setIsSaved(false)
   }
 
   const handleDrop = event => {
@@ -901,8 +1220,9 @@ function App() {
     }
   }
 
-  const compileCode = (playOnScene = false) => {
+  const compileCode = (playOnScene = false, codeOverride = null) => {
     setError('')
+    const codeToCompile = codeOverride ?? code
 
     // Якщо не потрібно програвати на сцені, просто валідуємо синтаксис без створення timeline
     if (!playOnScene) {
@@ -911,7 +1231,7 @@ function App() {
         // Це запобігає застосуванню GSAP анімації до елементів на сцені
         const wrapperBody = `
           const timeline = gsap.timeline({ paused: true })
-          timeline${code}
+          timeline${codeToCompile}
           return timeline
         `
         
@@ -944,7 +1264,7 @@ function App() {
     try {
       const wrapperBody = `
         const timeline = gsap.timeline()
-        timeline${code}
+        timeline${codeToCompile}
         return timeline
       `
       
@@ -971,14 +1291,24 @@ function App() {
   }
 
   const handlePreview = () => {
-    if (!compiled) {
-      compileCode()
-      return
-    }
+    resetTimeline()
+    resetSceneElements()
+    compileCode(true)
+  }
 
-    if (timelineRef.current && timelineRef.current.restart) {
-      timelineRef.current.restart()
-    }
+  const handleTimelinePreview = (nextCode) => {
+    setCode(nextCode)
+    setIsSaved(false)
+    resetTimeline()
+    resetSceneElements()
+    compileCode(true, nextCode)
+  }
+
+  const handleTimelineApply = (nextCode) => {
+    setCode(nextCode)
+    setIsSaved(false)
+    compileCode(false, nextCode)
+    setShowTimelineEditor(false)
   }
 
   const getProfileForWorkflow = async () => {
@@ -1165,20 +1495,124 @@ function App() {
     }
   }
 
+  const handleProjectClone = async (sourceProject, cloneInput) => {
+    try {
+      if (isGuest) {
+        alert('Guests cannot clone projects.')
+        return
+      }
+
+      if (!activeWorkspace?.workspaceId) {
+        throw new Error('Select a workspace before cloning a project.')
+      }
+
+      const profile = await getProfileForWorkflow()
+      if (!canCreateProjects(profile)) {
+        alert('Only team leads and developers can clone projects.')
+        return
+      }
+
+      const clonedImages = JSON.parse(JSON.stringify(sourceProject.images || []))
+      const clonedProjectData = {
+        name: cloneInput.name,
+        status: DEFAULT_PROJECT_STATUS,
+        format: sourceProject.format || 'Banner',
+        screenFormat: sourceProject.screenFormat || sourceProject.screen_format || 'landscape',
+        images: clonedImages,
+        code: sourceProject.code || DEFAULT_CODE,
+        cssCode: sourceProject.cssCode || sourceProject.css_code || '',
+        sceneBackground: sourceProject.sceneBackground || sourceProject.scene_background || '#ffffff',
+        sceneBorderStyle: sourceProject.sceneBorderStyle || sourceProject.scene_border_style || 'none',
+        sceneBorderColor: sourceProject.sceneBorderColor || sourceProject.scene_border_color || '#000000',
+        developerId: cloneInput.developerId || null,
+        qaId: cloneInput.qaId || null,
+        qaHandoffNote: null,
+        qaFeedbackNote: null,
+        isArchived: false,
+        archivedAt: null,
+        archivedBy: null
+      }
+
+      const dbProject = await createProject(clonedProjectData, activeWorkspace.workspaceId)
+      const clonedProject = transformProjectFromDB(dbProject)
+      setProjects(prevProjects => [clonedProject, ...prevProjects])
+      setStudioNoticeModal({
+        title: 'Project cloned',
+        message: `"${clonedProject.name}" was created as a full copy.`,
+        tone: 'success'
+      })
+    } catch (error) {
+      console.error('Project clone error:', error)
+      setStudioNoticeModal({
+        title: 'Clone failed',
+        message: error instanceof Error ? error.message : 'Unable to clone this project.',
+        tone: 'danger'
+      })
+    }
+  }
+
+  const handleProjectImport = async (importInput) => {
+    try {
+      if (isGuest) {
+        throw new Error('Guests cannot import projects.')
+      }
+
+      if (!activeWorkspace?.workspaceId) {
+        throw new Error('Select a workspace before importing a project.')
+      }
+
+      const profile = await getProfileForWorkflow()
+      if (!canCreateProjects(profile)) {
+        throw new Error('Only team leads and developers can import projects.')
+      }
+
+      const importedProjectData = {
+        name: importInput.name,
+        status: DEFAULT_PROJECT_STATUS,
+        format: importInput.format || 'Banner',
+        screenFormat: importInput.importedProject.screenFormat || 'landscape',
+        images: importInput.importedProject.images || [],
+        code: importInput.importedProject.code || DEFAULT_CODE,
+        cssCode: importInput.importedProject.cssCode || '',
+        sceneBackground: importInput.importedProject.sceneBackground || '#ffffff',
+        sceneBorderStyle: importInput.importedProject.sceneBorderStyle || 'none',
+        sceneBorderColor: importInput.importedProject.sceneBorderColor || '#000000',
+        developerId: importInput.developerId || null,
+        qaId: importInput.qaId || null,
+        qaHandoffNote: null,
+        qaFeedbackNote: null,
+        isArchived: false,
+        archivedAt: null,
+        archivedBy: null
+      }
+
+      const dbProject = await createProject(importedProjectData, activeWorkspace.workspaceId)
+      const importedProject = transformProjectFromDB(dbProject)
+
+      setProjects(prevProjects => [importedProject, ...prevProjects])
+      setStudioNoticeModal({
+        title: 'Project imported',
+        message: `"${importedProject.name}" was created from the uploaded HTML export.`,
+        tone: 'success'
+      })
+    } catch (error) {
+      console.error('Project import error:', error)
+      setStudioNoticeModal({
+        title: 'Import failed',
+        message: error instanceof Error ? error.message : 'Unable to import this HTML file.',
+        tone: 'danger'
+      })
+      throw error
+    }
+  }
+
   const handleRenameLayer = (layerId, newName) => {
     if (!newName.trim()) return
+    const layer = images.find(img => img.id === layerId)
+    if (layer?.locked) return
+
     const trimmedName = newName.trim()
-    // Очищаємо ім'я для використання як ID (прибираємо спецсимволи)
-    const cleanId = trimmedName.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase() || trimmedName
-    
-    // Перевіряємо унікальність нового ID
-    let uniqueId = cleanId
-    let counter = 1
-    const currentImages = images.filter(img => img.id !== layerId)
-    while (currentImages.some(img => img.id === uniqueId || img.elementId === uniqueId)) {
-      uniqueId = `${cleanId}-${counter}`
-      counter++
-    }
+    const uniqueId = createUniqueElementId(trimmedName, new Set(), layerId)
     
     setImages(prev => prev.map(img => {
       if (img.id === layerId) {
@@ -1208,16 +1642,23 @@ function App() {
   const handleUpdateImageProperty = (imageId, property, value) => {
     setImages(prev => prev.map(img => {
       if (img.id === imageId) {
-        const updated = { ...img, [property]: value }
+        if (img.locked) {
+          return img
+        }
+
+        const nextValue = property === 'elementId'
+          ? createUniqueElementId(value, new Set(), imageId)
+          : value
+        const updated = { ...img, [property]: nextValue }
         // Якщо оновлюється elementId, оновлюємо також trackingId і ID в DOM
         if (property === 'elementId') {
-          updated.trackingId = value
+          updated.trackingId = nextValue
           // Оновлюємо ID елемента в DOM (для зображень і тексту)
           setTimeout(() => {
             if (previewRef.current) {
               const element = previewRef.current.querySelector(`[id="${img.elementId || img.id}"]`)
               if (element) {
-                element.id = value
+                element.id = nextValue
               }
             }
           }, 0)
@@ -1233,17 +1674,30 @@ function App() {
     }))
   }
 
-  const handleDeleteLayer = (layerId) => {
-    if (window.confirm('Delete this layer?')) {
-      const image = images.find(img => img.id === layerId)
-      if (image) {
-        URL.revokeObjectURL(image.url)
-      }
-      setImages(prev => prev.filter(img => img.id !== layerId))
-      if (selectedImageId === layerId) {
-        setSelectedImageId(null)
-      }
+  const deleteLayerById = (layerId) => {
+    const image = images.find(img => img.id === layerId)
+    const isSharedBlobUrl = image?.url?.startsWith('blob:') && images.some(img => img.id !== layerId && img.url === image.url)
+    if (image?.url?.startsWith('blob:') && !isSharedBlobUrl) {
+      URL.revokeObjectURL(image.url)
     }
+    setImages(prev => prev.filter(img => img.id !== layerId))
+    if (selectedImageId === layerId) {
+      setSelectedImageId(null)
+    }
+    setIsSaved(false)
+  }
+
+  const handleDeleteLayer = (layerId) => {
+    const layer = images.find(img => img.id === layerId)
+
+    setStudioNoticeModal({
+      title: 'Delete layer?',
+      message: `This will remove "${layer?.name || 'this layer'}" from the current scene.`,
+      tone: 'danger',
+      confirmLabel: 'Delete layer',
+      cancelLabel: 'Cancel',
+      onConfirm: () => deleteLayerById(layerId)
+    })
   }
 
   const handleLayersWindowDragStart = (e) => {
@@ -1262,15 +1716,22 @@ function App() {
   const handleImageDragStart = (e, imageId) => {
     e.preventDefault()
     e.stopPropagation()
+    const image = images.find(img => img.id === imageId)
+    if (!image || image.locked || image.visible === false) {
+      return
+    }
+
     setSelectedImageId(imageId)
     setDraggingImageId(imageId)
-    const image = images.find(img => img.id === imageId)
+    pushImagesUndoSnapshot()
     if (image && previewRef.current) {
       const canvasRect = previewRef.current.getBoundingClientRect()
-      const imageRect = e.currentTarget.getBoundingClientRect()
+      const layerRect = e.currentTarget.getBoundingClientRect()
       setDragOffset({
-        x: e.clientX - canvasRect.left - (image.x || 0),
-        y: e.clientY - canvasRect.top - (image.y || 0)
+        x: (e.clientX - canvasRect.left) / canvasZoom - (image.x || 0),
+        y: (e.clientY - canvasRect.top) / canvasZoom - (image.y || 0),
+        width: layerRect.width / canvasZoom,
+        height: layerRect.height / canvasZoom
       })
     }
   }
@@ -1284,9 +1745,12 @@ function App() {
     const canvasDimensions = screenFormat === 'portrait' 
       ? { width: 390, height: 884 }
       : { width: 1024, height: 600 }
-    const newX = Math.max(0, Math.min(canvasDimensions.width, e.clientX - canvasRect.left - dragOffset.x))
-    const newY = Math.max(0, Math.min(canvasDimensions.height, e.clientY - canvasRect.top - dragOffset.y))
+    const maxX = Math.max(0, canvasDimensions.width - (dragOffset.width || 0))
+    const maxY = Math.max(0, canvasDimensions.height - (dragOffset.height || 0))
+    const newX = Math.max(0, Math.min(maxX, (e.clientX - canvasRect.left) / canvasZoom - dragOffset.x))
+    const newY = Math.max(0, Math.min(maxY, (e.clientY - canvasRect.top) / canvasZoom - dragOffset.y))
     
+    skipNextHistoryEntryRef.current = true
     setImages(prev => prev.map(img => 
       img.id === draggingImageId ? { ...img, x: newX, y: newY } : img
     ))
@@ -1304,7 +1768,7 @@ function App() {
     if (!selectedImageId) return
     
     const image = images.find(img => img.id === selectedImageId)
-    if (!image) return
+    if (!image || image.locked || image.visible === false) return
     
     const img = new Image()
     img.src = image.url
@@ -1348,10 +1812,15 @@ function App() {
   const handleResizeStart = (e, imageId, handle) => {
     e.preventDefault()
     e.stopPropagation()
-    setResizingImageId(imageId)
-    setResizeHandle(handle)
     
     const image = images.find(img => img.id === imageId)
+    if (!image || image.locked || image.visible === false) {
+      return
+    }
+
+    setResizingImageId(imageId)
+    setResizeHandle(handle)
+    pushImagesUndoSnapshot()
     if (image) {
       const rect = e.currentTarget.getBoundingClientRect()
       const canvasRect = previewRef.current?.getBoundingClientRect()
@@ -1359,8 +1828,8 @@ function App() {
         setResizeStart({
           x: e.clientX,
           y: e.clientY,
-          width: image.width || rect.width,
-          height: image.height || rect.height,
+          width: image.width || rect.width / canvasZoom,
+          height: image.height || rect.height / canvasZoom,
           startX: image.x || 0,
           startY: image.y || 0
         })
@@ -1374,12 +1843,11 @@ function App() {
     e.preventDefault()
     e.stopPropagation()
     
-    const canvasRect = previewRef.current.getBoundingClientRect()
-    const deltaX = (e.clientX - resizeStart.x) / (window.devicePixelRatio || 1)
-    const deltaY = (e.clientY - resizeStart.y) / (window.devicePixelRatio || 1)
+    const deltaX = (e.clientX - resizeStart.x) / canvasZoom
+    const deltaY = (e.clientY - resizeStart.y) / canvasZoom
     
     const image = images.find(img => img.id === resizingImageId)
-    if (!image) return
+    if (!image || image.locked || image.visible === false) return
     
     let newWidth = resizeStart.width
     let newHeight = resizeStart.height
@@ -1413,6 +1881,7 @@ function App() {
     newX = Math.max(0, Math.min(canvasDimensions.width - newWidth, newX))
     newY = Math.max(0, Math.min(canvasDimensions.height - newHeight, newY))
     
+    skipNextHistoryEntryRef.current = true
     setImages(prev => prev.map(img => 
       img.id === resizingImageId ? { 
         ...img, 
@@ -1465,6 +1934,8 @@ function App() {
               trackingId: img.trackingId,
               opacity: img.opacity,
               rotation: img.rotation,
+              visible: img.visible !== false,
+              locked: Boolean(img.locked),
               text: img.text,
               fontSize: img.fontSize,
               fontFamily: img.fontFamily,
@@ -1491,7 +1962,9 @@ function App() {
               className: img.className,
               trackingId: img.trackingId,
               opacity: img.opacity,
-              rotation: img.rotation
+              rotation: img.rotation,
+              visible: img.visible !== false,
+              locked: Boolean(img.locked)
             }
           }
           
@@ -1513,7 +1986,9 @@ function App() {
               className: img.className,
               trackingId: img.trackingId,
               opacity: img.opacity,
-              rotation: img.rotation
+              rotation: img.rotation,
+              visible: img.visible !== false,
+              locked: Boolean(img.locked)
             }
           } catch (err) {
             console.error('Error converting image to base64:', err)
@@ -1532,7 +2007,9 @@ function App() {
               className: img.className,
               trackingId: img.trackingId,
               opacity: img.opacity,
-              rotation: img.rotation
+              rotation: img.rotation,
+              visible: img.visible !== false,
+              locked: Boolean(img.locked)
             }
           }
         })
@@ -1755,6 +2232,7 @@ function App() {
     setResizeHandle(null)
     setShowDocumentMenu(false)
     setShowJSEditor(false)
+    setShowTimelineEditor(false)
     setShowCSSEditor(false)
     setShowAddMenu(false)
     setShowLayersModal(false)
@@ -1830,25 +2308,71 @@ function App() {
     // Працюємо тільки в редакторі
     if (view !== 'editor' || !currentProject) return
 
-    const handleKeyDown = (e) => {
-      // Перевіряємо, що користувач не знаходиться в полі вводу
-      const target = e.target
-      const isInput = target.tagName === 'INPUT' || 
-                      target.tagName === 'TEXTAREA' || 
-                      target.isContentEditable ||
-                      target.closest('.code-editor-hidden') ||
-                      target.closest('.css-editor') ||
-                      target.closest('.js-editor')
-      
-      if (isInput) return
+    const isTextEditingTarget = (eventTarget) => {
+      const target = eventTarget instanceof Element ? eventTarget : null
+      const activeElement = document.activeElement instanceof Element ? document.activeElement : null
+      const candidates = [target, activeElement].filter(Boolean)
 
+      return candidates.some((candidate) => {
+        const tagName = candidate.tagName
+
+        return tagName === 'INPUT' ||
+          tagName === 'TEXTAREA' ||
+          candidate.isContentEditable ||
+          Boolean(candidate.closest(
+            '[contenteditable="true"], .monaco-editor, .inputarea, .editor-modal, .code-editor-hidden, .css-editor, .js-editor'
+          ))
+      })
+    }
+
+    const hasSelectedText = () => {
+      const selection = window.getSelection?.()
+      return Boolean(selection && selection.toString().trim())
+    }
+
+    const handleKeyDown = (e) => {
       // Перевіряємо модифікатори (⌘ на Mac = metaKey, Ctrl на Windows/Linux = ctrlKey)
       const isModifierPressed = e.metaKey || e.ctrlKey
       const isShiftPressed = e.shiftKey
 
+      const key = e.key.toLowerCase()
+      const code = e.code
+      const isTextContext = isTextEditingTarget(e.target) || hasSelectedText()
+
+      if (isModifierPressed && !isShiftPressed && (code === 'KeyS' || key === 's' || key === 'ы')) {
+        e.preventDefault()
+        e.stopPropagation()
+        handleSave()
+        return
+      }
+
+      if (isTextContext) return
+
+      if ((key === 'delete' || key === 'backspace') && selectedImageId) {
+        e.preventDefault()
+        deleteLayerById(selectedImageId)
+        return
+      }
+
       if (!isModifierPressed) return
 
-      const key = e.key.toLowerCase()
+      if (!isShiftPressed && (code === 'KeyZ' || key === 'z' || key === 'я')) {
+        e.preventDefault()
+        handleUndoImagesChange()
+        return
+      }
+
+      if (!isShiftPressed && selectedImageId && (code === 'KeyC' || key === 'c' || key === 'с')) {
+        e.preventDefault()
+        handleCopySelectedLayer()
+        return
+      }
+
+      if (!isShiftPressed && (code === 'KeyV' || key === 'v' || key === 'м')) {
+        e.preventDefault()
+        handlePasteCopiedLayer()
+        return
+      }
 
       // ⌘P или Ctrl+P - Landscape Preview
       if (key === 'p' && !isShiftPressed && screenFormat === 'landscape') {
@@ -1871,13 +2395,6 @@ function App() {
         return
       }
 
-      // ⌘S или Ctrl+S - Save
-      if (key === 's' && !isShiftPressed) {
-        e.preventDefault()
-        handleSave()
-        return
-      }
-
       // ⌘⇧Enter или Ctrl+Shift+Enter - Save and Quit
       if (e.key === 'Enter' && isShiftPressed && isModifierPressed) {
         e.preventDefault()
@@ -1886,13 +2403,18 @@ function App() {
       }
     }
 
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [view, currentProject, screenFormat])
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+  }, [view, currentProject, screenFormat, selectedImageId, copiedLayer, images])
 
   // Функція для конвертації blob URL в base64
   const blobToBase64 = (blobUrlOrBlob) => {
     return new Promise((resolve, reject) => {
+      if (typeof blobUrlOrBlob === 'string' && blobUrlOrBlob.startsWith('data:')) {
+        resolve(blobUrlOrBlob)
+        return
+      }
+
       // Якщо це вже Blob об'єкт, використовуємо його напрямую
       if (blobUrlOrBlob instanceof Blob) {
         const reader = new FileReader()
@@ -1912,6 +2434,426 @@ function App() {
           .catch(reject)
       }
     })
+  }
+
+  const getExportCanvasDimensions = (exportScreenFormat = screenFormat) => ({
+    width: exportScreenFormat === 'portrait' ? 390 : 1024,
+    height: exportScreenFormat === 'portrait' ? 884 : 600
+  })
+
+  const getExportLayersWithBase64 = async (exportImages = images) => Promise.all(
+    exportImages.map(async (img) => {
+      if (img.type === 'text') {
+        return img
+      }
+
+      const source = img.base64 || img.url
+      const base64 = source ? await blobToBase64(source) : ''
+
+      return {
+        ...img,
+        base64
+      }
+    })
+  )
+
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  const getSupportedMp4RecorderOptions = () => {
+    const supportedMimeType = [
+      'video/mp4;codecs=avc1.42E01E',
+      'video/mp4;codecs=h264',
+      'video/mp4'
+    ].find((candidateMimeType) => MediaRecorder.isTypeSupported(candidateMimeType))
+
+    if (!supportedMimeType) {
+      throw new Error('This browser cannot export MP4 video. Please use the latest Chrome or Microsoft Edge.')
+    }
+
+    return { mimeType: supportedMimeType }
+  }
+
+  const waitForStageImages = (stage) => Promise.all(
+    Array.from(stage.querySelectorAll('img')).map((imageElement) => new Promise((resolve) => {
+      if (imageElement.complete) {
+        resolve()
+        return
+      }
+
+      imageElement.addEventListener('load', () => resolve(), { once: true })
+      imageElement.addEventListener('error', () => resolve(), { once: true })
+    }))
+  )
+
+  const createExportStage = (layers, dimensions, exportSettings = {}) => {
+    const exportSceneBackground = exportSettings.sceneBackground || sceneBackground
+    const exportSceneBorderStyle = exportSettings.sceneBorderStyle || sceneBorderStyle
+    const exportSceneBorderColor = exportSettings.sceneBorderColor || sceneBorderColor
+    const stage = document.createElement('div')
+    stage.id = 'export-preview-canvas'
+    stage.className = 'preview-container export-preview-container'
+    Object.assign(stage.style, {
+      position: 'fixed',
+      left: '-10000px',
+      top: '0',
+      width: `${dimensions.width}px`,
+      height: `${dimensions.height}px`,
+      overflow: 'hidden',
+      backgroundColor: exportSceneBackground,
+      border: exportSceneBorderStyle !== 'none' ? `1px ${exportSceneBorderStyle} ${exportSceneBorderColor}` : 'none'
+    })
+
+    layers
+      .slice()
+      .sort((leftLayer, rightLayer) => (leftLayer.zIndex || 0) - (rightLayer.zIndex || 0))
+      .forEach((layer, index) => {
+        const element = layer.type === 'text'
+          ? document.createElement('div')
+          : document.createElement('img')
+
+        element.id = layer.elementId || layer.id || `export-layer-${index}`
+        element.className = layer.type === 'text' ? 'preview-text' : 'preview-image'
+        element.dataset.imageIndex = String(index)
+
+        Object.assign(element.style, {
+          position: 'absolute',
+          zIndex: String(layer.zIndex ?? index),
+          left: `${layer.x || 0}px`,
+          top: `${layer.y || 0}px`,
+          opacity: String(layer.opacity ?? 1),
+          transform: layer.rotation ? `rotate(${layer.rotation}deg)` : 'none',
+          transformOrigin: 'center center'
+        })
+
+        if (layer.type === 'text') {
+          element.textContent = layer.text || 'New text'
+          Object.assign(element.style, {
+            display: 'block',
+            width: layer.width ? `${layer.width}px` : 'auto',
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word',
+            fontSize: `${layer.fontSize || 16}px`,
+            fontFamily: layer.fontFamily || 'Arial',
+            color: layer.color || '#000000',
+            fontWeight: layer.fontWeight || 'normal',
+            textAlign: layer.textAlign || 'left'
+          })
+        } else {
+          element.src = layer.base64 || layer.url || ''
+          element.alt = layer.name || 'Export layer'
+          Object.assign(element.style, {
+            display: 'block',
+            objectFit: 'contain',
+            width: layer.width ? `${layer.width}px` : 'auto',
+            height: layer.height ? `${layer.height}px` : 'auto',
+            maxWidth: `${dimensions.width}px`,
+            maxHeight: `${dimensions.height}px`
+          })
+        }
+
+        stage.appendChild(element)
+      })
+
+    document.body.appendChild(stage)
+    return stage
+  }
+
+  const createExportTimeline = (stage, exportCode = code || DEFAULT_CODE) => {
+    const wrapperBody = `
+      const timeline = gsap.timeline({ paused: true })
+      timeline${exportCode || DEFAULT_CODE}
+      return timeline
+    `
+    const timelineFactory = new Function('gsap', 'images', 'container', wrapperBody)
+    const timeline = timelineFactory(gsap, [], stage)
+
+    if (!timeline || typeof timeline.time !== 'function') {
+      throw new Error('Animation timeline was not created.')
+    }
+
+    timeline.pause(0)
+    timeline.repeat(0)
+    timeline.getChildren(true, true, true).forEach((animation) => {
+      animation.repeat(0)
+    })
+
+    return timeline
+  }
+
+  const parseTransformOrigin = (transformOrigin, width, height) => {
+    const [originX = '50%', originY = '50%'] = transformOrigin.split(' ')
+    const resolveOriginValue = (value, size) => {
+      if (value.endsWith('%')) {
+        return (parseFloat(value) / 100) * size
+      }
+
+      return Number.isFinite(parseFloat(value)) ? parseFloat(value) : size / 2
+    }
+
+    return {
+      x: resolveOriginValue(originX, width),
+      y: resolveOriginValue(originY, height)
+    }
+  }
+
+  const drawTextElementToCanvas = (context, element, computedStyle, width) => {
+    const fontSize = parseFloat(computedStyle.fontSize) || 16
+    const lineHeight = parseFloat(computedStyle.lineHeight) || fontSize * 1.2
+    const textAlign = computedStyle.textAlign || 'left'
+    const lines = (element.textContent || '').split('\n')
+    const textX = textAlign === 'center'
+      ? width / 2
+      : textAlign === 'right'
+        ? width
+        : 0
+
+    context.fillStyle = computedStyle.color || '#000000'
+    context.font = `${computedStyle.fontWeight || '400'} ${fontSize}px ${computedStyle.fontFamily || 'Arial'}`
+    context.textAlign = textAlign
+    context.textBaseline = 'top'
+
+    lines.forEach((line, index) => {
+      context.fillText(line, textX, index * lineHeight)
+    })
+  }
+
+  const renderStageToCanvas = async (stage, canvas, dimensions, exportSettings = {}) => {
+    const exportSceneBackground = exportSettings.sceneBackground || sceneBackground
+    const exportSceneBorderStyle = exportSettings.sceneBorderStyle || sceneBorderStyle
+    const exportSceneBorderColor = exportSettings.sceneBorderColor || sceneBorderColor
+    const context = canvas.getContext('2d')
+
+    if (!context) {
+      throw new Error('Canvas rendering is not supported in this browser.')
+    }
+
+    context.clearRect(0, 0, dimensions.width, dimensions.height)
+    context.fillStyle = exportSceneBackground
+    context.fillRect(0, 0, dimensions.width, dimensions.height)
+
+    const drawableElements = Array.from(stage.children)
+      .sort((leftElement, rightElement) => {
+        const leftZIndex = parseInt(window.getComputedStyle(leftElement).zIndex, 10) || 0
+        const rightZIndex = parseInt(window.getComputedStyle(rightElement).zIndex, 10) || 0
+        return leftZIndex - rightZIndex
+      })
+
+    for (const element of drawableElements) {
+      const computedStyle = window.getComputedStyle(element)
+      const width = element.offsetWidth || parseFloat(computedStyle.width) || 0
+      const height = element.offsetHeight || parseFloat(computedStyle.height) || 0
+
+      if (width <= 0 || height <= 0) {
+        continue
+      }
+
+      const left = parseFloat(computedStyle.left) || 0
+      const top = parseFloat(computedStyle.top) || 0
+      const opacity = parseFloat(computedStyle.opacity)
+      const transform = computedStyle.transform && computedStyle.transform !== 'none'
+        ? new DOMMatrix(computedStyle.transform)
+        : null
+      const transformOrigin = parseTransformOrigin(computedStyle.transformOrigin, width, height)
+
+      context.save()
+      context.globalAlpha = Number.isFinite(opacity) ? opacity : 1
+      context.translate(left, top)
+      context.translate(transformOrigin.x, transformOrigin.y)
+
+      if (transform) {
+        context.transform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f)
+      }
+
+      context.translate(-transformOrigin.x, -transformOrigin.y)
+
+      if (element.tagName.toLowerCase() === 'img') {
+        context.drawImage(element, 0, 0, width, height)
+      } else {
+        drawTextElementToCanvas(context, element, computedStyle, width)
+      }
+
+      context.restore()
+    }
+
+    if (exportSceneBorderStyle !== 'none') {
+      context.strokeStyle = exportSceneBorderColor
+      context.lineWidth = 1
+      context.strokeRect(0.5, 0.5, dimensions.width - 1, dimensions.height - 1)
+    }
+  }
+
+  const createExportScene = async (exportContext = {}) => {
+    const exportImages = exportContext.images || images
+    const exportScreenFormat = exportContext.screenFormat || screenFormat
+    const exportCode = exportContext.code || code || DEFAULT_CODE
+    const dimensions = getExportCanvasDimensions(exportScreenFormat)
+    const layers = await getExportLayersWithBase64(exportImages)
+    const stage = createExportStage(layers, dimensions, exportContext)
+    await waitForStageImages(stage)
+    const timeline = createExportTimeline(stage, exportCode)
+    const duration = Math.max(0.1, timeline.duration())
+
+    return {
+      ...exportContext,
+      dimensions,
+      stage,
+      timeline,
+      duration
+    }
+  }
+
+  const handleExportMp4 = async () => {
+    if (images.length === 0) {
+      setStudioNoticeModal({
+        title: 'Nothing to export yet',
+        message: 'Add an image or text layer before exporting this creative.',
+        tone: 'warning'
+      })
+      setShowDocumentMenu(false)
+      return
+    }
+
+    if (typeof MediaRecorder === 'undefined') {
+      setStudioNoticeModal({
+        title: 'MP4 export unavailable',
+        message: 'This browser does not support MediaRecorder video export.',
+        tone: 'warning'
+      })
+      setShowDocumentMenu(false)
+      return
+    }
+
+    let exportScene = null
+
+    try {
+      setShowDocumentMenu(false)
+      exportScene = await createExportScene()
+      const { dimensions, stage, timeline, duration } = exportScene
+      const fps = 30
+      const frameDelay = 1000 / fps
+      const canvas = document.createElement('canvas')
+      canvas.width = dimensions.width
+      canvas.height = dimensions.height
+
+      const stream = canvas.captureStream(fps)
+      const recorderOptions = getSupportedMp4RecorderOptions()
+      const recorder = new MediaRecorder(stream, recorderOptions)
+      const chunks = []
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) {
+          chunks.push(event.data)
+        }
+      }
+
+      const recordingFinished = new Promise((resolve, reject) => {
+        recorder.onstop = resolve
+        recorder.onerror = () => reject(new Error('Video recorder failed while exporting.'))
+      })
+
+      timeline.time(0, false)
+      await renderStageToCanvas(stage, canvas, dimensions, exportScene)
+      stream.getVideoTracks()[0]?.requestFrame?.()
+      recorder.start(100)
+
+      for (let time = 0; time <= duration; time += 1 / fps) {
+        timeline.time(Math.min(time, duration), false)
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        await renderStageToCanvas(stage, canvas, dimensions, exportScene)
+        stream.getVideoTracks()[0]?.requestFrame?.()
+        await new Promise((resolve) => setTimeout(resolve, frameDelay))
+      }
+
+      recorder.requestData?.()
+      recorder.stop()
+      await recordingFinished
+      stream.getTracks().forEach((track) => track.stop())
+      timeline.kill()
+
+      const mp4Blob = new Blob(chunks, { type: recorderOptions.mimeType })
+
+      if (mp4Blob.size === 0) {
+        throw new Error('MP4 export produced an empty video file.')
+      }
+
+      downloadBlob(mp4Blob, `${currentProject?.name || 'creative'}.mp4`)
+    } catch (error) {
+      console.error('MP4 export error:', error)
+      setStudioNoticeModal({
+        title: 'MP4 export failed',
+        message: error instanceof Error ? error.message : 'Unable to export this creative as MP4.',
+        tone: 'danger'
+      })
+    } finally {
+      exportScene?.stage?.remove()
+      exportScene?.timeline?.kill()
+    }
+  }
+
+  const handleExportGif = async () => {
+    if (images.length === 0) {
+      setStudioNoticeModal({
+        title: 'Nothing to export yet',
+        message: 'Add an image or text layer before exporting this creative.',
+        tone: 'warning'
+      })
+      setShowDocumentMenu(false)
+      return
+    }
+
+    let exportScene = null
+
+    try {
+      setShowDocumentMenu(false)
+      exportScene = await createExportScene()
+      const { dimensions, stage, timeline, duration } = exportScene
+      const fps = 12
+      const canvas = document.createElement('canvas')
+      canvas.width = dimensions.width
+      canvas.height = dimensions.height
+      const gif = new GIF({
+        workers: 2,
+        quality: 12,
+        width: dimensions.width,
+        height: dimensions.height,
+        workerScript: gifWorkerUrl
+      })
+
+      for (let time = 0; time <= duration; time += 1 / fps) {
+        timeline.time(Math.min(time, duration), false)
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        await renderStageToCanvas(stage, canvas, dimensions, exportScene)
+        gif.addFrame(canvas, { copy: true, delay: 1000 / fps })
+      }
+
+      const gifBlob = await new Promise((resolve, reject) => {
+        gif.on('finished', resolve)
+        gif.on('abort', () => reject(new Error('GIF export was cancelled.')))
+        gif.render()
+      })
+
+      timeline.kill()
+      downloadBlob(gifBlob, `${currentProject?.name || 'creative'}.gif`)
+    } catch (error) {
+      console.error('GIF export error:', error)
+      setStudioNoticeModal({
+        title: 'GIF export failed',
+        message: error instanceof Error ? error.message : 'Unable to export this creative as GIF.',
+        tone: 'danger'
+      })
+    } finally {
+      exportScene?.stage?.remove()
+      exportScene?.timeline?.kill()
+    }
   }
 
   // Функция для генерации HTML контента
@@ -2150,17 +3092,7 @@ function App() {
     }
   }
 
-  // Загальна функція для створення превью
   const createPreview = (format) => {
-    // Вбиваємо timeline на сцені і скидаємо всі GSAP властивості елементів
-    resetTimeline()
-    resetSceneElements()
-    
-    // Компілюємо код якщо потрібно (тільки для валідації, не застосовуємо на сцені)
-    if (!compiled) {
-      compileCode(false) // Не застосовуємо анімацію на сцені
-    }
-    
     if (images.length === 0) {
       setStudioNoticeModal({
         title: 'Nothing to preview yet',
@@ -2170,245 +3102,11 @@ function App() {
       setShowDocumentMenu(false)
       return
     }
-    
-    const isPortrait = format === 'portrait'
-    const canvasWidth = isPortrait ? 390 : 1024
-    const canvasHeight = isPortrait ? 884 : 600
-    
-    // Обчислюємо коефіцієнт масштабування для елементів
-    // Якщо формат превью відрізняється від формату проєкту, масштабуємо елементи
-    const sourceCanvasWidth = screenFormat === 'portrait' ? 390 : 1024
-    const sourceCanvasHeight = screenFormat === 'portrait' ? 884 : 600
-    
-      // Обчислюємо коефіцієнт масштабування по ширині (основний параметр)
-    const scale = canvasWidth / sourceCanvasWidth
-    
-    const previewWindow = window.open('', '_blank', 'fullscreen=yes')
-    if (previewWindow) {
-      const imagesData = images.map((img, idx) => ({
-        url: img.base64 || img.url, // Використовуємо base64 якщо є, інакше url
-        base64: img.base64 || (img.url && img.url.startsWith('data:') ? img.url : null),
-        name: img.name,
-        id: img.id,
-        type: img.type,
-        elementId: img.elementId || img.id,
-        zIndex: img.zIndex || idx,
-        x: (img.x || 0) * scale,
-        y: (img.y || 0) * scale,
-        width: img.width ? img.width * scale : null,
-        height: img.height ? img.height * scale : null,
-        opacity: img.opacity !== undefined ? img.opacity : 1,
-        rotation: img.rotation || 0,
-        text: img.text,
-        fontSize: img.fontSize ? img.fontSize * scale : 16,
-        fontFamily: img.fontFamily,
-        color: img.color,
-        fontWeight: img.fontWeight,
-        textAlign: img.textAlign
-      }))
-      
-      previewWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Preview ${isPortrait ? 'Portrait' : 'Landscape'} - ${currentProject?.name || 'Creative'}</title>
-          <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            html, body {
-              width: 100%;
-              height: 100%;
-              overflow: hidden;
-            }
-            body {
-              background: #1a1a1a;
-              font-family: system-ui, sans-serif;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            .preview-wrapper {
-              width: 100vw;
-              height: 100vh;
-              position: relative;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            .preview-container {
-              width: ${canvasWidth}px;
-              height: ${canvasHeight}px;
-              background-color: ${sceneBackground};
-              border: ${sceneBorderStyle !== 'none' ? `1px ${sceneBorderStyle} ${sceneBorderColor}` : 'none'};
-              position: relative;
-              overflow: hidden;
-              transform-origin: center center;
-            }
-            .preview-image {
-              position: absolute;
-              object-fit: contain;
-              display: block;
-              max-width: ${canvasWidth}px;
-              max-height: ${canvasHeight}px;
-            }
-            .preview-text {
-              position: absolute;
-              display: block;
-              white-space: pre-wrap;
-              word-wrap: break-word;
-            }
-            ${cssCode ? `/* Custom CSS */\n${cssCode}` : ''}
-          </style>
-        </head>
-        <body>
-          <div class="preview-wrapper">
-            <div class="preview-container" id="preview-canvas">
-              ${imagesData.map((image, index) => {
-                if (image.type === 'text') {
-                  return `
-                    <div 
-                      id="${image.elementId || image.id}"
-                      class="preview-text"
-                      data-image-index="${index}"
-                      style="
-                        z-index: ${image.zIndex};
-                        left: ${image.x || 0}px;
-                        top: ${image.y || 0}px;
-                        width: ${image.width ? image.width + 'px' : 'auto'};
-                        opacity: ${image.opacity !== undefined ? image.opacity : 1};
-                        transform: ${image.rotation ? `rotate(${image.rotation}deg)` : 'none'};
-                        transform-origin: center center;
-                        font-size: ${image.fontSize || 16}px;
-                        font-family: ${image.fontFamily || 'Arial'};
-                        color: ${image.color || '#000000'};
-                        font-weight: ${image.fontWeight || 'normal'};
-                        text-align: ${image.textAlign || 'left'};
-                      "
-                    >${image.text || 'New text'}</div>
-                  `
-                } else {
-                  return `
-                    <img 
-                      id="${image.elementId || image.id}"
-                      src="${image.base64 || image.url || ''}" 
-                      alt="${image.name}"
-                      class="preview-image"
-                      data-image-index="${index}"
-                      style="
-                        z-index: ${image.zIndex};
-                        left: ${image.x || 0}px;
-                        top: ${image.y || 0}px;
-                        ${image.width ? `width: ${image.width}px;` : `max-width: ${canvasWidth}px;`}
-                        ${image.height ? `height: ${image.height}px;` : `max-height: ${canvasHeight}px;`}
-                        object-fit: contain;
-                        opacity: ${image.opacity !== undefined ? image.opacity : 1};
-                        transform: ${image.rotation ? `rotate(${image.rotation}deg)` : 'none'};
-                        transform-origin: center center;
-                      "
-                    />
-                  `
-                }
-              }).join('')}
-            </div>
-          </div>
-          <script>
-            const code = ${JSON.stringify(code)};
-            const container = document.getElementById('preview-canvas');
-            
-            function updateScale() {
-              const container = document.querySelector('.preview-container');
-              const windowWidth = window.innerWidth;
-              const windowHeight = window.innerHeight;
-              const canvasWidth = ${canvasWidth};
-              const canvasHeight = ${canvasHeight};
-              
-              const scaleX = windowWidth / canvasWidth;
-              const scaleY = windowHeight / canvasHeight;
-              const scale = Math.min(scaleX, scaleY);
-              
-              // Устанавливаем точные размеры контейнера
-              container.style.width = canvasWidth + 'px';
-              container.style.height = canvasHeight + 'px';
-              container.style.transform = 'scale(' + scale + ')';
-              container.style.transformOrigin = 'center center';
-            }
-            
-            window.addEventListener('resize', updateScale);
-            updateScale();
-            
-            setTimeout(() => {
-              try {
-                // Ждем загрузки всех элементов (изображения и текст)
-                const elements = container.querySelectorAll('.preview-image, .preview-text');
-                let loadedCount = 0;
-                const totalElements = elements.length;
-                
-                if (totalElements === 0) {
-                  console.warn('No elements found in preview');
-                  return;
-                }
-                
-                const checkAllLoaded = () => {
-                  loadedCount++;
-                  if (loadedCount === totalElements) {
-                    // Все элементы загружены, запускаем анимацию
-                    const wrapperBody = \`
-                      const timeline = gsap.timeline()
-                      timeline\${code}
-                      return timeline
-                    \`;
-                    
-                    try {
-                      const factory = new Function('gsap', 'images', 'container', wrapperBody);
-                      const timeline = factory(gsap, [], container);
-                      if (timeline && typeof timeline.play === 'function') {
-                        timeline.play();
-                      } else {
-                        console.error('Timeline creation failed:', timeline);
-                        alert('Animation creation error. Check console for details.');
-                      }
-                    } catch (err) {
-                      console.error('Animation error:', err);
-                      alert('Animation error: ' + err.message);
-                    }
-                  }
-                };
-                
-                // Проверяем загрузку каждого элемента
-                elements.forEach((el) => {
-                  if (el.tagName === 'IMG') {
-                    if (el.complete) {
-                      checkAllLoaded();
-                    } else {
-                      el.addEventListener('load', checkAllLoaded);
-                      el.addEventListener('error', checkAllLoaded);
-                    }
-                  } else {
-                    // Для текстових елементів вважаємо, що вони завжди "завантажені"
-                    checkAllLoaded();
-                  }
-                });
-              } catch (err) {
-                console.error('Animation error:', err);
-                alert('Animation error: ' + err.message);
-              }
-            }, 200);
-          </script>
-        </body>
-        </html>
-      `)
-      previewWindow.document.close()
-      
-      // Спроба відкрити в повноекранному режимі
-      if (previewWindow.document.documentElement.requestFullscreen) {
-        previewWindow.document.documentElement.requestFullscreen().catch(() => {})
-      } else if (previewWindow.document.documentElement.webkitRequestFullscreen) {
-        previewWindow.document.documentElement.webkitRequestFullscreen()
-      } else if (previewWindow.document.documentElement.msRequestFullscreen) {
-        previewWindow.document.documentElement.msRequestFullscreen()
-      }
-    }
+
     setShowDocumentMenu(false)
+    resetTimeline()
+    resetSceneElements()
+    compileCode(true)
   }
 
   const handleLandscapePreview = () => {
@@ -2419,8 +3117,33 @@ function App() {
     createPreview('portrait')
   }
 
+  const handleExternalPreview = () => {
+    if (images.length === 0) {
+      setStudioNoticeModal({
+        title: 'Nothing to preview yet',
+        message: 'Add an image or text layer before opening the preview.',
+        tone: 'warning'
+      })
+      setShowDocumentMenu(false)
+      return
+    }
+
+    if (!currentProject?.id) {
+      setStudioNoticeModal({
+        title: 'Preview unavailable',
+        message: 'Save or open a project before launching the external preview.',
+        tone: 'warning'
+      })
+      setShowDocumentMenu(false)
+      return
+    }
+
+    setShowDocumentMenu(false)
+    navigateToView('preview', { projectId: currentProject.id, format: screenFormat, from: 'editor' })
+  }
+
   // Функція для превью проєкту зі списку
-  const handleProjectPreview = (project, format) => {
+  const handleProjectPreview = (project, format, source = 'projects') => {
     if (!project.images || project.images.length === 0) {
       setStudioNoticeModal({
         title: 'Nothing to preview yet',
@@ -2430,225 +3153,11 @@ function App() {
       return
     }
 
-    const projectScreenFormat = project.screenFormat || 'landscape'
-    const projectCode = project.code || DEFAULT_CODE
-    const projectCssCode = project.cssCode || ''
-    const projectImages = project.images || []
-    
-    const isPortrait = format === 'portrait'
-    const canvasWidth = isPortrait ? 390 : 1024
-    const canvasHeight = isPortrait ? 884 : 600
-    
-    const sourceCanvasWidth = projectScreenFormat === 'portrait' ? 390 : 1024
-    const sourceCanvasHeight = projectScreenFormat === 'portrait' ? 884 : 600
-    const scale = canvasWidth / sourceCanvasWidth
-    
-    const previewWindow = window.open('', '_blank', 'fullscreen=yes')
-    if (previewWindow) {
-      const imagesData = projectImages.map((img, idx) => ({
-        name: img.name,
-        id: img.id,
-        type: img.type,
-        elementId: img.elementId || img.id,
-        zIndex: img.zIndex || idx,
-        x: (img.x || 0) * scale,
-        y: (img.y || 0) * scale,
-        width: img.width ? img.width * scale : null,
-        height: img.height ? img.height * scale : null,
-        opacity: img.opacity !== undefined ? img.opacity : 1,
-        rotation: img.rotation || 0,
-        text: img.text,
-        fontSize: img.fontSize ? img.fontSize * scale : 16,
-        fontFamily: img.fontFamily,
-        color: img.color,
-        fontWeight: img.fontWeight,
-        textAlign: img.textAlign,
-        url: img.base64 || (img.url && img.url.startsWith('data:') ? img.url : img.url) || '',
-        base64: img.base64 || (img.url && img.url.startsWith('data:') ? img.url : null)
-      }))
-      
-      previewWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Preview ${isPortrait ? 'Portrait' : 'Landscape'} - ${project.name || 'Creative'}</title>
-          <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-          <style>
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              min-height: 100vh;
-              background: #1a1a1a;
-              overflow: hidden;
-            }
-            .preview-wrapper {
-              width: 100vw;
-              height: 100vh;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-            }
-            .preview-container {
-              width: ${canvasWidth}px;
-              height: ${canvasHeight}px;
-              position: relative;
-              background: ${project.sceneBackground || '#ffffff'};
-              border: ${project.sceneBorderStyle === 'solid' ? `1px solid ${project.sceneBorderColor || '#000000'}` : 'none'};
-              overflow: hidden;
-            }
-            .preview-image {
-              position: absolute;
-              object-fit: contain;
-              display: block;
-              max-width: ${canvasWidth}px;
-              max-height: ${canvasHeight}px;
-            }
-            .preview-text {
-              position: absolute;
-              white-space: nowrap;
-              user-select: none;
-            }
-            ${projectCssCode}
-          </style>
-        </head>
-        <body>
-          <div class="preview-wrapper">
-            <div class="preview-container" id="preview-canvas">
-              ${imagesData.map((image, index) => {
-                if (image.type === 'text') {
-                  return `
-                    <div 
-                      id="${image.elementId || image.id}"
-                      class="preview-text"
-                      data-image-index="${index}"
-                      style="
-                        z-index: ${image.zIndex};
-                        left: ${image.x || 0}px;
-                        top: ${image.y || 0}px;
-                        font-size: ${image.fontSize || 16}px;
-                        font-family: ${image.fontFamily || 'Arial'};
-                        color: ${image.color || '#000000'};
-                        font-weight: ${image.fontWeight || 'normal'};
-                        text-align: ${image.textAlign || 'left'};
-                        opacity: ${image.opacity !== undefined ? image.opacity : 1};
-                        transform: ${image.rotation ? `rotate(${image.rotation}deg)` : 'none'};
-                        transform-origin: center center;
-                      "
-                    >${image.text || ''}</div>
-                  `
-                } else {
-                  return `
-                    <img 
-                      id="${image.elementId || image.id}"
-                      src="${image.url || image.base64 || ''}" 
-                      alt="${image.name}"
-                      class="preview-image"
-                      data-image-index="${index}"
-                      style="
-                        z-index: ${image.zIndex};
-                        left: ${image.x || 0}px;
-                        top: ${image.y || 0}px;
-                        ${image.width ? `width: ${image.width}px;` : `max-width: ${canvasWidth}px;`}
-                        ${image.height ? `height: ${image.height}px;` : `max-height: ${canvasHeight}px;`}
-                        object-fit: contain;
-                        opacity: ${image.opacity !== undefined ? image.opacity : 1};
-                        transform: ${image.rotation ? `rotate(${image.rotation}deg)` : 'none'};
-                        transform-origin: center center;
-                      "
-                    />
-                  `
-                }
-              }).join('')}
-          </div>
-          </div>
-          <script>
-            const code = ${JSON.stringify(projectCode)};
-            const canvasWidth = ${canvasWidth};
-            const canvasHeight = ${canvasHeight};
-            
-            function updateScale() {
-              const wrapper = document.querySelector('.preview-wrapper');
-              const container = document.querySelector('.preview-container');
-              if (!wrapper || !container) return;
-              
-              const scaleX = window.innerWidth / canvasWidth;
-              const scaleY = window.innerHeight / canvasHeight;
-              const scale = Math.min(scaleX, scaleY);
-              
-              container.style.transform = \`scale(\${scale})\`;
-            }
-            
-            window.addEventListener('resize', updateScale);
-            updateScale();
-            
-            setTimeout(() => {
-              try {
-                const elements = document.querySelectorAll('[data-image-index]');
-                let loadedCount = 0;
-                const totalElements = elements.length;
-                
-                function checkAllLoaded() {
-                  loadedCount++;
-                  if (loadedCount >= totalElements) {
-                    try {
-                      const wrapperBody = \`
-                        const timeline = gsap.timeline()
-                        timeline\${code}
-                        return timeline
-                      \`;
-                      const factory = new Function('gsap', 'images', 'container', wrapperBody);
-                      const timeline = factory(gsap, [], document.getElementById('preview-canvas'));
-                      if (timeline && timeline.play) {
-                        timeline.play();
-                      }
-                    } catch (err) {
-                      console.error('Animation error:', err);
-                      alert('Animation error: ' + err.message);
-                    }
-                  }
-                }
-                
-                elements.forEach((el) => {
-                  if (el.tagName === 'IMG') {
-                    if (el.complete) {
-                      checkAllLoaded();
-                    } else {
-                      el.addEventListener('load', checkAllLoaded);
-                      el.addEventListener('error', checkAllLoaded);
-                    }
-                  } else {
-                    checkAllLoaded();
-                  }
-                });
-              } catch (err) {
-                console.error('Animation error:', err);
-                alert('Animation error: ' + err.message);
-              }
-            }, 200);
-          </script>
-        </body>
-        </html>
-      `)
-      previewWindow.document.close()
-      
-      if (previewWindow.document.documentElement.requestFullscreen) {
-        previewWindow.document.documentElement.requestFullscreen().catch(() => {})
-      } else if (previewWindow.document.documentElement.webkitRequestFullscreen) {
-        previewWindow.document.documentElement.webkitRequestFullscreen()
-      } else if (previewWindow.document.documentElement.msRequestFullscreen) {
-        previewWindow.document.documentElement.msRequestFullscreen()
-      }
-    }
+    navigateToView('preview', { projectId: project.id, format, from: source })
   }
 
   // Функція для експорту проєкту зі списку
-  const handleProjectExport = async (project) => {
+  const handleProjectExport = async (project, exportFormat = 'html') => {
     if (!project.images || project.images.length === 0) {
       setStudioNoticeModal({
         title: 'Nothing to export yet',
@@ -2659,9 +3168,16 @@ function App() {
     }
 
     try {
-      const projectScreenFormat = project.screenFormat || 'landscape'
-      const canvasWidth = projectScreenFormat === 'portrait' ? 390 : 1024
-      const canvasHeight = projectScreenFormat === 'portrait' ? 884 : 600
+      const normalizedExportFormat = String(exportFormat || 'html').toLowerCase()
+      const projectScreenFormat = project.screenFormat || project.screen_format || 'landscape'
+      const projectExportContext = {
+        images: project.images,
+        code: project.code || DEFAULT_CODE,
+        screenFormat: projectScreenFormat,
+        sceneBackground: project.sceneBackground || '#ffffff',
+        sceneBorderStyle: project.sceneBorderStyle || 'none',
+        sceneBorderColor: project.sceneBorderColor || '#000000'
+      }
       
       const imagesWithBase64 = await Promise.all(
         project.images.map(async (img) => {
@@ -2685,6 +3201,122 @@ function App() {
           return img
         })
       )
+
+      if (normalizedExportFormat === 'gif') {
+        let exportScene = null
+
+        try {
+          exportScene = await createExportScene({
+            ...projectExportContext,
+            images: imagesWithBase64
+          })
+          const { dimensions, stage, timeline, duration } = exportScene
+          const fps = 12
+          const canvas = document.createElement('canvas')
+          canvas.width = dimensions.width
+          canvas.height = dimensions.height
+          const gif = new GIF({
+            workers: 2,
+            quality: 12,
+            width: dimensions.width,
+            height: dimensions.height,
+            workerScript: gifWorkerUrl
+          })
+
+          for (let time = 0; time <= duration; time += 1 / fps) {
+            timeline.time(Math.min(time, duration), false)
+            await new Promise((resolve) => requestAnimationFrame(resolve))
+            await renderStageToCanvas(stage, canvas, dimensions, exportScene)
+            gif.addFrame(canvas, { copy: true, delay: 1000 / fps })
+          }
+
+          const gifBlob = await new Promise((resolve, reject) => {
+            gif.on('finished', resolve)
+            gif.on('abort', () => reject(new Error('GIF export was cancelled.')))
+            gif.render()
+          })
+
+          timeline.kill()
+          downloadBlob(gifBlob, `${project.name || 'creative'}.gif`)
+          return
+        } finally {
+          exportScene?.stage?.remove()
+          exportScene?.timeline?.kill()
+        }
+      }
+
+      if (normalizedExportFormat === 'mp4') {
+        if (typeof MediaRecorder === 'undefined') {
+          setStudioNoticeModal({
+            title: 'MP4 export unavailable',
+            message: 'This browser does not support MediaRecorder video export.',
+            tone: 'warning'
+          })
+          return
+        }
+
+        let exportScene = null
+
+        try {
+          exportScene = await createExportScene({
+            ...projectExportContext,
+            images: imagesWithBase64
+          })
+          const { dimensions, stage, timeline, duration } = exportScene
+          const fps = 30
+          const frameDelay = 1000 / fps
+          const canvas = document.createElement('canvas')
+          canvas.width = dimensions.width
+          canvas.height = dimensions.height
+
+          const stream = canvas.captureStream(fps)
+          const recorderOptions = getSupportedMp4RecorderOptions()
+          const recorder = new MediaRecorder(stream, recorderOptions)
+          const chunks = []
+
+          recorder.ondataavailable = (event) => {
+            if (event.data?.size) {
+              chunks.push(event.data)
+            }
+          }
+
+          const recordingFinished = new Promise((resolve, reject) => {
+            recorder.onstop = resolve
+            recorder.onerror = () => reject(new Error('Video recorder failed while exporting.'))
+          })
+
+          timeline.time(0, false)
+          await renderStageToCanvas(stage, canvas, dimensions, exportScene)
+          stream.getVideoTracks()[0]?.requestFrame?.()
+          recorder.start(100)
+
+          for (let time = 0; time <= duration; time += 1 / fps) {
+            timeline.time(Math.min(time, duration), false)
+            await new Promise((resolve) => requestAnimationFrame(resolve))
+            await renderStageToCanvas(stage, canvas, dimensions, exportScene)
+            stream.getVideoTracks()[0]?.requestFrame?.()
+            await new Promise((resolve) => setTimeout(resolve, frameDelay))
+          }
+
+          recorder.requestData?.()
+          recorder.stop()
+          await recordingFinished
+          stream.getTracks().forEach((track) => track.stop())
+          timeline.kill()
+
+          const mp4Blob = new Blob(chunks, { type: recorderOptions.mimeType })
+
+          if (mp4Blob.size === 0) {
+            throw new Error('MP4 export produced an empty video file.')
+          }
+
+          downloadBlob(mp4Blob, `${project.name || 'creative'}.mp4`)
+          return
+        } finally {
+          exportScene?.stage?.remove()
+          exportScene?.timeline?.kill()
+        }
+      }
 
       const htmlContent = generateProjectHTMLContent(imagesWithBase64, project, projectScreenFormat)
       
@@ -2891,83 +3523,8 @@ function App() {
     if (!hasProjectAccess) {
       return
     }
-    
-    setCurrentProject(project)
-    // Відновлюємо збережені дані проєкту
-    if (project.images) {
-      // Відновлюємо зображення з base64 або URL
-      const restoredImages = project.images.map(img => {
-        if (img.type === 'text') {
-          return img // Текстові елементи не потребують відновлення URL
-        }
-        // Якщо є base64, створюємо blob URL з нього
-        if (img.base64) {
-          // Конвертуємо base64 в blob URL для відображення
-          try {
-            const byteCharacters = atob(img.base64.split(',')[1] || img.base64)
-            const byteNumbers = new Array(byteCharacters.length)
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i)
-            }
-            const byteArray = new Uint8Array(byteNumbers)
-            const blob = new Blob([byteArray], { type: 'image/png' })
-            const blobUrl = URL.createObjectURL(blob)
-            return {
-              ...img,
-              url: blobUrl,
-              base64: img.base64 // Зберігаємо base64 для майбутнього збереження
-            }
-          } catch (err) {
-            console.error('Error creating blob URL from base64:', err)
-            return img
-          }
-        }
-        // Якщо URL це base64 рядок (починається з data:), використовуємо її напряму
-        if (img.url && img.url.startsWith('data:')) {
-          return {
-            ...img,
-            base64: img.url
-          }
-        }
-        // Якщо це звичайний URL, використовуємо його
-        return img
-      })
-      setImages(restoredImages)
-    } else {
-      setImages([])
-    }
-    if (project.code) {
-      setCode(project.code)
-    } else {
-      setCode(DEFAULT_CODE)
-    }
-    if (project.cssCode) {
-      setCssCode(project.cssCode)
-    } else {
-      setCssCode('')
-    }
-    if (project.sceneBackground) {
-      setSceneBackground(project.sceneBackground)
-    } else {
-      setSceneBackground('#ffffff')
-    }
-    if (project.sceneBorderStyle) {
-      setSceneBorderStyle(project.sceneBorderStyle)
-    } else {
-      setSceneBorderStyle('none')
-    }
-    if (project.sceneBorderColor) {
-      setSceneBorderColor(project.sceneBorderColor)
-    } else {
-      setSceneBorderColor('#000000')
-    }
-    if (project.screenFormat) {
-      setScreenFormat(project.screenFormat)
-    } else {
-      setScreenFormat('landscape') // За замовчуванням landscape
-    }
-    setIsSaved(true) // При відкритті проєкту вважаємо його збереженим
-    setCurrentProject(project)
+
+    restoreEditorProjectState(project)
     navigateToView('editor', { projectId: project.id })
   }
 
@@ -2981,7 +3538,13 @@ function App() {
     return {
       workspaceId,
       workspaceName: inviteMatch?.[1]?.trim() || activeWorkspace?.workspaceName || 'workspace',
-      workflowRole: normalizedRoleLabel.includes('qa') ? 'qa' : normalizedRoleLabel.includes('developer') ? 'developer' : 'member',
+      workflowRole: normalizedRoleLabel.includes('lead')
+        ? 'lead'
+        : normalizedRoleLabel.includes('qa')
+          ? 'qa'
+          : normalizedRoleLabel.includes('developer')
+            ? 'developer'
+            : 'member',
       workflowRoleLabel: rawRoleLabel,
       invitedByName: null,
       invitedByEmail: null,
@@ -3185,6 +3748,22 @@ function App() {
         const notificationProject = projects.find((project) => project.id === notification.projectId)
 
         if (notificationProject) {
+          const qaFeedbackNote = getProjectQaFeedbackNote(notificationProject).trim()
+          const isReturnedToDevelopmentNotification =
+            notification.type === 'project_status_changed' &&
+            /moved to development/i.test(notification.body || '')
+
+          if (isReturnedToDevelopmentNotification && qaFeedbackNote) {
+            setQaFeedbackNotificationModal({
+              notificationId: notification.id,
+              project: notificationProject,
+              feedback: qaFeedbackNote,
+              title: notification.title,
+              body: notification.body
+            })
+            return
+          }
+
           await handleEditProject(notificationProject)
           return
         }
@@ -3215,6 +3794,21 @@ function App() {
     }
 
     setWorkspaceInviteModal(null)
+  }
+
+  const handleOpenQaFeedbackNotificationProject = async () => {
+    try {
+      if (!qaFeedbackNotificationModal?.project) {
+        return
+      }
+
+      const targetProject = qaFeedbackNotificationModal.project
+      setQaFeedbackNotificationModal(null)
+      await handleEditProject(targetProject)
+    } catch (error) {
+      console.error('Error opening QA feedback notification project:', error)
+      alert('Unable to open this project. Please try again.')
+    }
   }
 
   const handleWorkspaceInviteModalResponse = async (action) => {
@@ -3302,7 +3896,7 @@ function App() {
     const project = projects.find(p => p.id === projectId)
     const profile = await getProfileForWorkflow()
 
-    if ((field === 'developerId' || field === 'qaId') && profile?.role !== 'admin') {
+    if ((field === 'developerId' || field === 'qaId') && getWorkflowTeamRole(profile) !== 'lead') {
       alert('Only team leads can update project assignments.')
       return
     }
@@ -3449,7 +4043,8 @@ function App() {
 
   const loadWorkspaceContext = async ({
     preferredWorkspaceId = getStoredActiveWorkspaceId(),
-    showActivationSuccess = false
+    showActivationSuccess = false,
+    preserveCurrentRoute = false
   } = {}) => {
     if (isGuestRef.current) {
       return null
@@ -3499,7 +4094,16 @@ function App() {
         navigateToView('onboarding', { replace: true })
       } else {
         syncWorkspaceActivationSuccess(false)
-        navigateToView(destination.nextView, { replace: true })
+        const canStayOnCurrentRoute =
+          preserveCurrentRoute &&
+          shouldPreserveAuthenticatedRoute(location.pathname) &&
+          getViewFromPath(location.pathname) !== 'login'
+
+        if (canStayOnCurrentRoute) {
+          setView(getViewFromPath(location.pathname))
+        } else {
+          navigateToView(destination.nextView, { replace: true })
+        }
       }
 
       return destination.workspace
@@ -3657,6 +4261,46 @@ function App() {
     }
   }
 
+  const handleStartWorkspaceTestPayment = async (planType, options = {}) => {
+    const authenticatedUser = options.authenticatedUser || user
+    const checkoutAccess = resolveWorkspaceCheckoutAccess({
+      isGuest: isGuestRef.current,
+      hasUser: Boolean(authenticatedUser),
+      planType
+    })
+
+    try {
+      setSelectedWorkspacePlan(planType)
+      setWorkspacePaymentError('')
+      setIsFinalizingWorkspaceActivation(false)
+      syncWorkspaceActivationSuccess(false)
+
+      if (checkoutAccess.requiresAuth) {
+        openGuestCheckoutAuthModal(planType)
+        return
+      }
+
+      setIsStartingWorkspaceTestPayment(true)
+      setPendingWorkspacePayment(null)
+      syncPendingWorkspacePaymentOrderId(null)
+      syncPendingWorkspacePaymentStartedAt(null)
+
+      const testPayment = await createWorkspaceTestPaymentSession(planType)
+      setIsWorkspacePlanPurchaseModalOpen(false)
+      setWorkspacePaymentError('')
+      await loadWorkspaceContext({
+        preferredWorkspaceId: testPayment.workspaceId,
+        showActivationSuccess: true
+      })
+      navigateToView('onboarding', { replace: true })
+    } catch (error) {
+      console.error('Error starting workspace test payment:', error)
+      setWorkspacePaymentError(error?.message || 'Unable to activate the test payment.')
+    } finally {
+      setIsStartingWorkspaceTestPayment(false)
+    }
+  }
+
   const handleJoinWorkspace = async ({ workspaceLogin, workspacePassword }, options = {}) => {
     const authenticatedUser = options.authenticatedUser || user
 
@@ -3695,6 +4339,25 @@ function App() {
     } catch (error) {
       console.error('Error joining workspace from header:', error)
       throw error instanceof Error ? error : new Error('Unable to join this workspace.')
+    }
+  }
+
+  const handleOpenWorkspacePlanPurchase = () => {
+    try {
+      setWorkspacePaymentError('')
+      setIsWorkspacePlanPurchaseModalOpen(true)
+    } catch (error) {
+      console.error('Error opening workspace plan purchase modal:', error)
+      setWorkspacePaymentError(error?.message || 'Unable to open workspace plans.')
+    }
+  }
+
+  const handleWorkspacePlanPurchase = async (planType) => {
+    try {
+      await handleStartWorkspaceCheckout(planType)
+    } catch (error) {
+      console.error('Error starting workspace plan checkout:', error)
+      setWorkspacePaymentError(error?.message || 'Unable to start the workspace checkout.')
     }
   }
 
@@ -3822,6 +4485,13 @@ function App() {
     })
     
     try {
+      if (!isGuest && workspaceIdOverride) {
+        setWorkspaceSyncState((previousState) => ({
+          ...previousState,
+          status: navigator.onLine === false ? 'offline' : 'syncing'
+        }))
+      }
+
       console.log(`[${time}] [БД ДЕБАГ] loadProjects: Крок 1 - Вибір джерела проєктів`)
       const importStartTime = performance.now()
       let projectsData = []
@@ -3888,6 +4558,13 @@ function App() {
           setState: setStateDuration
         }
       })
+
+      if (!isGuest && workspaceIdOverride) {
+        setWorkspaceSyncState({
+          status: navigator.onLine === false ? 'offline' : 'synced',
+          lastSyncedAt: Date.now()
+        })
+      }
     } catch (error) {
       const totalDuration = (performance.now() - startTime).toFixed(2)
       console.error(`[${time}] [БД ДЕБАГ] loadProjects: Помилка завантаження проєктів (${totalDuration}ms)`, {
@@ -3900,6 +4577,12 @@ function App() {
       // Якщо помилка, використовуємо порожній масив
       setProjects([])
       console.log(`[${time}] [БД ДЕБАГ] loadProjects: Встановлено порожній масив проєктів`)
+      if (!isGuest && workspaceIdOverride) {
+        setWorkspaceSyncState((previousState) => ({
+          ...previousState,
+          status: navigator.onLine === false ? 'offline' : 'error'
+        }))
+      }
     }
   }
 
@@ -3980,8 +4663,26 @@ function App() {
           return
         }
 
+        const paymentStartedAt = payment.createdAt ? new Date(payment.createdAt).getTime() : pendingWorkspacePaymentStartedAtRef.current
+
+        if (
+          isWorkspacePaymentConfirmationExpired({
+            startedAt: paymentStartedAt,
+            now: Date.now()
+          })
+        ) {
+          syncPendingWorkspacePaymentOrderId(null)
+          syncPendingWorkspacePaymentStartedAt(null)
+          syncWorkspaceActivationSuccess(false)
+          setPendingWorkspacePayment(payment)
+          setIsFinalizingWorkspaceActivation(false)
+          setWorkspacePaymentError('Payment was not confirmed within 3 minutes. Please start a new checkout.')
+          navigateToView('onboarding', { replace: true })
+          return
+        }
+
         setIsFinalizingWorkspaceActivation(false)
-        syncPendingWorkspacePaymentStartedAt(payment.createdAt ? new Date(payment.createdAt).getTime() : pendingWorkspacePaymentStartedAtRef.current)
+        syncPendingWorkspacePaymentStartedAt(paymentStartedAt)
         setPendingWorkspacePayment(payment)
         setWorkspacePaymentError('')
         navigateToView('onboarding', { replace: true })
@@ -4053,7 +4754,8 @@ function App() {
 
             try {
               await loadWorkspaceContext({
-                preferredWorkspaceId: getStoredActiveWorkspaceId()
+                preferredWorkspaceId: getStoredActiveWorkspaceId(),
+                preserveCurrentRoute: true
               })
             } catch (error) {
               console.error('[БД ДЕБАГ] Помилка завантаження workspace context:', error)
@@ -4156,7 +4858,11 @@ function App() {
           setUser(session.user)
           syncGuestMode(false)
           if (mounted) {
-            if (event === 'SIGNED_IN' && shouldResolveWorkspaceContext) {
+            if (
+              event === 'SIGNED_IN' &&
+              shouldResolveWorkspaceContext &&
+              !shouldPreserveAuthenticatedRoute(location.pathname)
+            ) {
               setIsResolvingWorkspaceContext(true)
               navigateToView('onboarding', { replace: true })
             }
@@ -4211,7 +4917,8 @@ function App() {
               console.log(`[БД ДЕБАГ] onAuthStateChange: Завантаження workspace context для події ${event}`)
               try {
                 await loadWorkspaceContext({
-                  preferredWorkspaceId: getStoredActiveWorkspaceId()
+                  preferredWorkspaceId: getStoredActiveWorkspaceId(),
+                  preserveCurrentRoute: shouldPreserveAuthenticatedRoute(location.pathname)
                 })
               } catch (error) {
                 console.error(`[БД ДЕБАГ] onAuthStateChange: Помилка завантаження workspace context для події ${event}:`, error)
@@ -4501,6 +5208,14 @@ function App() {
     user &&
     !isGuest
   )
+  const ownedWorkspacePlanTypes = Array.from(
+    new Set(
+      accessibleWorkspaces
+        .filter((workspace) => workspace.workspaceRole === 'owner' && workspace.workspaceStatus !== 'archived')
+        .map((workspace) => workspace.workspaceType)
+        .filter((workspaceType) => workspaceType === 'personal' || workspaceType === 'team')
+    )
+  )
   const workspaceInviteModalElement = workspaceInviteModal ? (
     <WorkspaceInviteModal
       invite={workspaceInviteModal}
@@ -4516,6 +5231,17 @@ function App() {
       onJoin={handleJoinWorkspaceFromHeader}
     />
   ) : null
+  const workspacePlanPurchaseModalElement = isWorkspacePlanPurchaseModalOpen ? (
+    <WorkspacePlanPurchaseModal
+      ownedPlanTypes={ownedWorkspacePlanTypes}
+      isStartingCheckout={isStartingWorkspaceCheckout}
+      isStartingTestPayment={isStartingWorkspaceTestPayment}
+      paymentError={workspacePaymentError}
+      onClose={() => setIsWorkspacePlanPurchaseModalOpen(false)}
+      onStartCheckout={handleWorkspacePlanPurchase}
+      onStartTestPayment={handleStartWorkspaceTestPayment}
+    />
+  ) : null
   const workspaceJoinRequestModalElement = workspaceJoinRequestModal ? (
     <WorkspaceJoinRequestModal
       request={workspaceJoinRequestModal}
@@ -4525,6 +5251,8 @@ function App() {
       onClose={handleCloseWorkspaceJoinRequestModal}
     />
   ) : null
+  const NoticeIcon = studioNoticeModal?.tone === 'success' ? CheckCircle2 : AlertTriangle
+  const noticeEyebrow = studioNoticeModal?.tone === 'success' ? 'Completed' : 'Studio notice'
   const studioNoticeModalElement = studioNoticeModal ? (
     <div className="studio-notice-modal-overlay" onClick={() => setStudioNoticeModal(null)}>
       <div
@@ -4544,18 +5272,94 @@ function App() {
         </button>
 
         <div className="studio-notice-modal__icon">
-          <AlertTriangle size={20} />
+          <NoticeIcon size={20} />
         </div>
 
         <div className="studio-notice-modal__content">
-          <span className="studio-notice-modal__eyebrow">Studio notice</span>
+          <span className="studio-notice-modal__eyebrow">{noticeEyebrow}</span>
           <h2 id="studio-notice-modal-title">{studioNoticeModal.title}</h2>
           <p>{studioNoticeModal.message}</p>
         </div>
 
         <div className="studio-notice-modal__actions">
-          <button type="button" onClick={() => setStudioNoticeModal(null)}>
-            Got it
+          {studioNoticeModal.onConfirm && (
+            <button
+              type="button"
+              className="studio-notice-modal__action studio-notice-modal__action--secondary"
+              onClick={() => setStudioNoticeModal(null)}
+            >
+              {studioNoticeModal.cancelLabel || 'Cancel'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="studio-notice-modal__action studio-notice-modal__action--primary"
+            onClick={() => {
+              const confirmAction = studioNoticeModal.onConfirm
+              setStudioNoticeModal(null)
+              confirmAction?.()
+            }}
+          >
+            {studioNoticeModal.confirmLabel || 'Got it'}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+  const qaFeedbackNotificationModalElement = qaFeedbackNotificationModal ? (
+    <div className="qa-feedback-notification-modal-overlay" onClick={() => setQaFeedbackNotificationModal(null)}>
+      <div
+        className="qa-feedback-notification-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="qa-feedback-notification-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="qa-feedback-notification-modal__close"
+          onClick={() => setQaFeedbackNotificationModal(null)}
+          aria-label="Close QA feedback"
+        >
+          <X size={16} />
+        </button>
+
+        <div className="qa-feedback-notification-modal__hero">
+          <div className="qa-feedback-notification-modal__icon">
+            <MessageSquareText size={22} />
+          </div>
+          <div>
+            <span className="qa-feedback-notification-modal__eyebrow">QA feedback</span>
+            <h2 id="qa-feedback-notification-modal-title">
+              {qaFeedbackNotificationModal.project?.name || 'Project returned to Development'}
+            </h2>
+            <span className="qa-feedback-notification-modal__status">Returned to Development</span>
+            <p>{qaFeedbackNotificationModal.body || 'QA returned this project to Development.'}</p>
+          </div>
+        </div>
+
+        <div className="qa-feedback-notification-modal__feedback">
+          <div className="qa-feedback-notification-modal__feedback-label">
+            <span>What QA found</span>
+            <span className="qa-feedback-notification-modal__feedback-mark">Review note</span>
+          </div>
+          <p>{qaFeedbackNotificationModal.feedback}</p>
+        </div>
+
+        <div className="qa-feedback-notification-modal__actions">
+          <button
+            type="button"
+            className="qa-feedback-notification-modal__action qa-feedback-notification-modal__action--secondary"
+            onClick={() => setQaFeedbackNotificationModal(null)}
+          >
+            Later
+          </button>
+          <button
+            type="button"
+            className="qa-feedback-notification-modal__action qa-feedback-notification-modal__action--primary"
+            onClick={handleOpenQaFeedbackNotificationProject}
+          >
+            Enter project
           </button>
         </div>
       </div>
@@ -4578,7 +5382,8 @@ function App() {
       activeWorkspace?.workspaceRole === 'owner' ||
       workflowProfile?.role === 'admin' ||
       workflowProfile?.workspace_role === 'owner' ||
-      workflowProfile?.workspaceRole === 'owner'
+      workflowProfile?.workspaceRole === 'owner' ||
+      getWorkflowTeamRole(workflowProfile) === 'lead'
     )
 
   // Показуємо завантаження тільки якщо ще перевіряємо автентифікацію
@@ -4621,6 +5426,7 @@ function App() {
           workspaceJoinSecret={workspaceJoinSecret}
           selectedPlanType={selectedWorkspacePlan}
           isStartingCheckout={isStartingWorkspaceCheckout}
+          isStartingTestPayment={isStartingWorkspaceTestPayment}
           isRefreshingPayment={isRefreshingWorkspacePayment}
           isFinalizingActivation={isFinalizingWorkspaceActivation}
           isReturningToLogin={isReturningToLogin}
@@ -4628,6 +5434,7 @@ function App() {
           onPlanChange={setSelectedWorkspacePlan}
           onJoinWorkspace={handleJoinWorkspace}
           onStartCheckout={handleStartWorkspaceCheckout}
+          onStartTestPayment={handleStartWorkspaceTestPayment}
           onReturnToLogin={handleBackFromOnboarding}
           onOpenWorkspaceAccess={handleOpenWorkspaceAccess}
           onContinueToWorkspace={() => {
@@ -4686,8 +5493,10 @@ function App() {
           />
         )}
         {workspaceInviteModalElement}
+        {workspacePlanPurchaseModalElement}
         {workspaceJoinRequestModalElement}
         {studioNoticeModalElement}
+        {qaFeedbackNotificationModalElement}
       </>
     )
   }
@@ -4703,24 +5512,33 @@ function App() {
           onEditProject={handleEditProject}
           onUpdateProject={handleUpdateProject}
           onSetEditingId={setEditingProjectId}
-          onProjectPreview={handleProjectPreview}
+          onProjectPreview={(project, format) => handleProjectPreview(project, format, 'projects')}
           onProjectExport={handleProjectExport}
+          onProjectClone={handleProjectClone}
+          onProjectImport={handleProjectImport}
+          onProjectWorkflowAction={handleProjectWorkflowAction}
           onDeleteProject={handleDeleteProject}
           onOpenWorkspaceAccess={handleOpenWorkspaceAccess}
+          onCreateTeamWorkspace={!isGuest ? handleOpenWorkspacePlanPurchase : undefined}
           onOpenWorkspaceJoin={canJoinTeamWorkspaceFromHeader ? () => setIsWorkspaceJoinModalOpen(true) : undefined}
           activeWorkspace={activeWorkspace}
           accessibleWorkspaces={accessibleWorkspaces}
           workflowProfile={workflowProfile}
           notifications={projectNotifications}
           unreadNotificationCount={unreadProjectNotificationCount}
+          workspaceSyncState={workspaceSyncState}
           onNotificationSelect={handleProjectNotificationSelect}
           onMarkAllNotificationsRead={handleMarkAllProjectNotificationsRead}
           onClearNotifications={handleClearProjectNotifications}
           onWorkspaceChange={handleWorkspaceChange}
           onSignOut={handleReturnToLogin}
           onOpenCabinet={(tab = 'profile', options = {}) => {
-            setCabinetInitialTab(tab)
-            setCabinetInitialMember(options.member || null)
+            const allowedCabinetTabs = new Set(['profile', 'workspace', 'projects', 'member', 'users'])
+            const nextCabinetTab = typeof tab === 'string' && allowedCabinetTabs.has(tab) ? tab : 'profile'
+            const nextCabinetOptions = options && typeof options === 'object' ? options : {}
+
+            setCabinetInitialTab(nextCabinetTab)
+            setCabinetInitialMember(nextCabinetOptions.member || null)
             navigateToView('cabinet')
           }}
           isGuest={isGuest}
@@ -4758,8 +5576,10 @@ function App() {
         )}
         {workspaceInviteModalElement}
         {workspaceJoinModalElement}
+        {workspacePlanPurchaseModalElement}
         {workspaceJoinRequestModalElement}
         {studioNoticeModalElement}
+        {qaFeedbackNotificationModalElement}
       </>
     )
   }
@@ -4789,6 +5609,7 @@ function App() {
           onClearNotifications={handleClearProjectNotifications}
           onWorkspaceChange={handleWorkspaceChange}
           onOpenWorkspaceJoin={canJoinTeamWorkspaceFromHeader ? () => setIsWorkspaceJoinModalOpen(true) : undefined}
+          onCreateTeamWorkspace={handleOpenWorkspacePlanPurchase}
           onCreateWorkspaceInvite={handleCreateWorkspaceInvite}
           onRevokeWorkspaceInvite={handleRevokeWorkspaceInvite}
           onUpdateWorkspaceMemberRole={handleUpdateWorkspaceMemberRole}
@@ -4806,14 +5627,16 @@ function App() {
           }}
           onSignOut={handleReturnToLogin}
           onEditProject={handleEditProject}
-          onProjectPreview={handleProjectPreview}
+          onProjectPreview={(project, format) => handleProjectPreview(project, format, 'cabinet')}
           onProjectExport={handleProjectExport}
           onDeleteProject={handleDeleteProject}
         />
         {workspaceInviteModalElement}
         {workspaceJoinModalElement}
+        {workspacePlanPurchaseModalElement}
         {workspaceJoinRequestModalElement}
         {studioNoticeModalElement}
+        {qaFeedbackNotificationModalElement}
       </>
     )
   }
@@ -4823,6 +5646,68 @@ function App() {
   }
 
   const selectedImage = images.find(img => img.id === selectedImageId)
+
+  if (view === 'preview') {
+    const previewProjectId = getPreviewProjectIdFromPath(location.pathname)
+    const previewSearchParams = new URLSearchParams(location.search)
+    const previewFormat = previewSearchParams.get('format') === 'portrait' ? 'portrait' : 'landscape'
+    const rawPreviewFrom = previewSearchParams.get('from')
+    const previewFrom = ['cabinet', 'editor', 'projects'].includes(rawPreviewFrom) ? rawPreviewFrom : 'projects'
+    const isCurrentProjectPreview = currentProject && (
+      String(currentProject.id) === previewProjectId || previewFrom === 'editor'
+    )
+    const previewProject = isCurrentProjectPreview
+      ? {
+          ...currentProject,
+          images,
+          code,
+          cssCode,
+          screenFormat,
+          sceneBackground,
+          sceneBorderStyle,
+          sceneBorderColor
+        }
+      : projects.find((project) => String(project.id) === previewProjectId)
+
+    if (!previewProject) {
+      return (
+        <ProjectPreview
+          projectName="Preview unavailable"
+          images={[]}
+          format={previewFormat}
+          sourceFormat={previewFormat}
+          onBack={() => navigateToView(previewFrom === 'cabinet' ? 'cabinet' : 'projects')}
+        />
+      )
+    }
+
+    return (
+      <ProjectPreview
+        projectName={previewProject.name}
+        images={previewProject.images || []}
+        code={previewProject.code || DEFAULT_CODE}
+        cssCode={previewProject.cssCode || ''}
+        format={previewFormat}
+        sourceFormat={previewProject.screenFormat || previewProject.screen_format || 'landscape'}
+        sceneBackground={previewProject.sceneBackground || '#ffffff'}
+        sceneBorderStyle={previewProject.sceneBorderStyle || 'none'}
+        sceneBorderColor={previewProject.sceneBorderColor || '#000000'}
+        onBack={() => {
+          if (previewFrom === 'cabinet') {
+            navigateToView('cabinet')
+            return
+          }
+
+          if (previewFrom === 'editor') {
+            navigateToView('editor', { projectId: previewProject.id })
+            return
+          }
+
+          navigateToView('projects')
+        }}
+      />
+    )
+  }
   
   // Сторінка редактора проєкту
   if (view === 'editor' && currentProject) {
@@ -4831,13 +5716,34 @@ function App() {
       <div className="studio-shell-top">
         <MenuBar
           showDocumentMenu={showDocumentMenu}
-          onToggleDocumentMenu={() => setShowDocumentMenu(!showDocumentMenu)}
+          onToggleDocumentMenu={(menuId) => {
+            if (!menuId) {
+              setShowDocumentMenu(false)
+              return
+            }
+
+            setShowDocumentMenu(prevMenu => (prevMenu === menuId ? false : menuId))
+          }}
           onLandscapePreview={handleLandscapePreview}
           onPortraitPreview={handlePortraitPreview}
+          onExternalPreview={handleExternalPreview}
           screenFormat={screenFormat}
           onExport={handleExport}
+          onExportMp4={handleExportMp4}
+          onExportGif={handleExportGif}
           onSave={handleSave}
           onSaveAndQuit={handleSaveAndQuit}
+          onShowJSEditor={() => {
+            setJsEditorInitialTab('logic')
+            setShowJSEditor(true)
+          }}
+          onShowCSSEditor={() => setShowCSSEditor(true)}
+          onShowTimelineEditor={() => {
+            setShowTimelineEditor(true)
+          }}
+          profile={workflowProfile}
+          isWorkflowBusy={isWorkflowActionLoading}
+          onWorkflowAction={handleProjectWorkflowAction}
           onLogoClick={handleEditorBack}
           isSaved={isSaved}
           project={currentProject}
@@ -4899,6 +5805,10 @@ function App() {
           onImageClick={setSelectedImageId}
           onImageDragStart={handleImageDragStart}
           onResizeStart={handleResizeStart}
+          zoom={canvasZoom}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onZoomReset={handleZoomReset}
           sceneBackground={sceneBackground}
           sceneBorderStyle={sceneBorderStyle}
           sceneBorderColor={sceneBorderColor}
@@ -4928,10 +5838,20 @@ function App() {
           onToggleSection={toggleSection}
           totalCreativeSize={totalCreativeSize}
           onShowLayers={() => setShowLayersModal(true)}
-          onShowJSEditor={() => setShowJSEditor(true)}
+          onShowJSEditor={() => {
+            setJsEditorInitialTab('logic')
+            setShowJSEditor(true)
+          }}
+          onShowTimelineEditor={() => setShowTimelineEditor(true)}
           onShowCSSEditor={() => setShowCSSEditor(true)}
           onDeleteLayer={handleDeleteLayer}
           onSelectLayer={setSelectedImageId}
+          onToggleLayerVisibility={handleToggleLayerVisibility}
+          onToggleLayerLock={handleToggleLayerLock}
+          onLayerDragStart={handleLayerDragStart}
+          onLayerDragOver={handleLayerDragOver}
+          onLayerDragEnd={handleLayerDragEnd}
+          draggedLayerIndex={draggedLayerIndex}
           selectedImageId={selectedImageId}
           images={images}
           sceneBackground={sceneBackground}
@@ -5028,8 +5948,7 @@ function App() {
         <JSEditor
           code={code}
           images={images}
-          sceneBackground={sceneBackground}
-          screenFormat={screenFormat}
+          initialWorkspaceTab={jsEditorInitialTab}
           onCodeChange={(newCode) => {
             setCode(newCode)
             setIsSaved(false) // Помечаем проект как несохраненный при изменении кода
@@ -5039,6 +5958,16 @@ function App() {
             setShowJSEditor(false)
           }}
           onClose={() => setShowJSEditor(false)}
+        />
+      )}
+
+      {showTimelineEditor && (
+        <TimelineEditor
+          code={code}
+          images={images}
+          onPreviewCode={handleTimelinePreview}
+          onApplyCode={handleTimelineApply}
+          onClose={() => setShowTimelineEditor(false)}
         />
       )}
 
@@ -5074,10 +6003,13 @@ function App() {
           onLayerDragEnd={handleLayerDragEnd}
           onWindowDragStart={handleLayersWindowDragStart}
           onSetEditingId={setEditingLayerId}
+          onToggleLayerVisibility={handleToggleLayerVisibility}
+          onToggleLayerLock={handleToggleLayerLock}
           onUpdateImageName={(imageId, newName) => {
-            setImages(prev => prev.map(img => 
-              img.id === imageId ? { ...img, name: newName } : img
-            ))
+            setImages(prev => prev.map(img => (
+              img.id === imageId && !img.locked ? { ...img, name: newName } : img
+            )))
+            setIsSaved(false)
           }}
         />
       )}
@@ -5092,7 +6024,9 @@ function App() {
         />
       )}
 
+      {workspacePlanPurchaseModalElement}
       {studioNoticeModalElement}
+      {qaFeedbackNotificationModalElement}
 
       <div className="studio-code-panel-hidden">
           <textarea

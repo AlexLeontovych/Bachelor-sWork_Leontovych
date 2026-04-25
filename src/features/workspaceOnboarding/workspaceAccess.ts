@@ -4,6 +4,7 @@ export const ACTIVE_WORKSPACE_STORAGE_KEY = 'creative-studio.active-workspace-id
 export const PENDING_PAYMENT_ORDER_STORAGE_KEY = 'creative-studio.pending-payment-order-id'
 export const PENDING_PAYMENT_STARTED_AT_STORAGE_KEY = 'creative-studio.pending-payment-started-at'
 export const WORKSPACE_PAYMENT_CONFIRMATION_TIMEOUT_MS = 60_000
+export const WORKSPACE_PAYMENT_FINAL_TIMEOUT_MS = 180_000
 
 /**
  * Safely reads the last active workspace identifier from local storage.
@@ -297,6 +298,37 @@ export const isWorkspacePaymentConfirmationDelayed = ({
     }
 
     return now - startedAt >= WORKSPACE_PAYMENT_CONFIRMATION_TIMEOUT_MS
+  } catch (error) {
+    return false
+  }
+}
+
+/**
+ * Reports whether payment confirmation exceeded the final waiting window.
+ *
+ * @param {{ startedAt: number | null | undefined, now?: number }} input
+ * @returns {boolean}
+ *
+ * @example
+ * const didExpire = isWorkspacePaymentConfirmationExpired({ startedAt: Date.now() - 181_000 })
+ */
+export const isWorkspacePaymentConfirmationExpired = ({
+  startedAt,
+  now = Date.now()
+}: {
+  startedAt?: number | null
+  now?: number
+}): boolean => {
+  try {
+    if (!startedAt || !Number.isFinite(startedAt) || startedAt <= 0) {
+      return false
+    }
+
+    if (!Number.isFinite(now) || now <= 0) {
+      return false
+    }
+
+    return now - startedAt >= WORKSPACE_PAYMENT_FINAL_TIMEOUT_MS
   } catch (error) {
     return false
   }

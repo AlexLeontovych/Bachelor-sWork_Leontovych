@@ -46,11 +46,11 @@ export const WORKSPACE_PLANS: Record<WorkspacePlanType, WorkspacePlanDefinition>
     benefits: [
       'Shared workspace for the team lead and invited collaborators.',
       'Join teammates by email invite or shared workspace credentials.',
-      'Existing solo owners upgrade in place without losing projects.'
+      'Creates a separate corporate workspace without touching solo projects.'
     ],
     drawbacks: [
       'The team lead is responsible for member access and credential rotation.',
-      'Only one active owned workspace is supported per billing account.'
+      'One active corporate workspace can be owned per billing account.'
     ],
     ctaLabel: 'Pay 2 UAH'
   }

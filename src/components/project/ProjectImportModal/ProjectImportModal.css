@@ -1,0 +1,283 @@
+.project-import-modal-overlay {
+  background: rgba(2, 6, 14, 0.82);
+  backdrop-filter: blur(20px);
+}
+
+.project-import-modal-dialog {
+  max-width: 780px;
+  max-height: calc(100dvh - 36px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 24px;
+  border: 1px solid rgba(98, 116, 174, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(67, 210, 255, 0.13), transparent 32%),
+    linear-gradient(180deg, rgba(21, 27, 42, 0.98), rgba(15, 19, 31, 0.98));
+  box-shadow:
+    0 36px 96px rgba(0, 0, 0, 0.46),
+    0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.project-import-modal-header {
+  align-items: flex-start;
+  padding-bottom: 26px;
+  flex-shrink: 0;
+}
+
+.project-import-modal-heading {
+  display: grid;
+  gap: 10px;
+  max-width: 580px;
+}
+
+.project-import-modal-heading__badge {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  background: rgba(14, 165, 233, 0.13);
+  color: #d9f4ff;
+}
+
+.project-import-modal-eyebrow,
+.project-import-section-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.project-import-modal-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.project-import-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 32px;
+}
+
+.project-import-modal-content::-webkit-scrollbar {
+  width: 7px;
+}
+
+.project-import-modal-content::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.26);
+}
+
+.project-import-dropzone {
+  width: 100%;
+  min-height: 168px;
+  padding: 24px;
+  border-radius: 22px;
+  border: 1px dashed rgba(125, 211, 252, 0.32);
+  background:
+    radial-gradient(circle at top, rgba(125, 211, 252, 0.13), transparent 42%),
+    rgba(255, 255, 255, 0.035);
+  color: var(--text-primary);
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  text-align: center;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.project-import-dropzone:hover,
+.project-import-dropzone.active {
+  transform: translateY(-1px);
+  border-color: rgba(125, 211, 252, 0.62);
+  background-color: rgba(125, 211, 252, 0.07);
+  box-shadow: 0 20px 46px rgba(14, 165, 233, 0.12);
+}
+
+.project-import-dropzone.ready {
+  border-color: rgba(74, 222, 128, 0.42);
+  background:
+    radial-gradient(circle at top, rgba(74, 222, 128, 0.12), transparent 42%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.project-import-file-input {
+  display: none;
+}
+
+.project-import-dropzone__icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  background: rgba(14, 165, 233, 0.12);
+  color: #e0f7ff;
+}
+
+.project-import-dropzone.ready .project-import-dropzone__icon {
+  border-color: rgba(74, 222, 128, 0.24);
+  background: rgba(74, 222, 128, 0.12);
+  color: #dcfce7;
+}
+
+.project-import-dropzone__title {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.project-import-dropzone__meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.project-import-error {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fecaca;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.project-import-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
+  gap: 22px;
+}
+
+.project-import-modal-content .modal-input,
+.project-import-modal-content .modal-select {
+  min-height: 46px;
+  border-radius: 14px;
+}
+
+.project-import-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.project-import-format-grid {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.project-import-format-pill {
+  min-height: 30px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.project-import-format-pill:hover {
+  border-color: rgba(125, 211, 252, 0.22);
+  color: var(--text-primary);
+}
+
+.project-import-format-pill.active {
+  border-color: rgba(125, 211, 252, 0.5);
+  background: rgba(14, 165, 233, 0.12);
+  color: #e0f7ff;
+  box-shadow: 0 14px 24px rgba(14, 165, 233, 0.14);
+}
+
+.project-import-assignment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.project-import-assignee-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-import-assignee-select-wrap {
+  position: relative;
+}
+
+.project-import-assignee-select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 42px 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  color-scheme: dark;
+  appearance: none;
+}
+
+.project-import-modal-content .modal-select option,
+.project-import-assignee-select option {
+  background-color: #101827;
+  color: #f8fbff;
+}
+
+.project-import-assignee-select option:checked {
+  background-color: #2f6fd6;
+  color: #ffffff;
+}
+
+.project-import-assignee-select-wrap svg {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.project-import-modal-footer {
+  flex-shrink: 0;
+}
+
+.project-import-footnote {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.project-import-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .project-import-form-grid,
+  .project-import-assignment-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .project-import-footer-actions {
+    width: 100%;
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}

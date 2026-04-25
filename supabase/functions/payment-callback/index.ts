@@ -9,6 +9,7 @@ import { jsonResponse, handleOptionsRequest } from '../_shared/responses.ts'
 import { createAdminClient } from '../_shared/supabase.ts'
 
 const logger = createLogger('payment-callback')
+const WORKSPACE_PAYMENT_FINAL_TIMEOUT_MS = 180_000
 
 const getRequiredEnv = (name: string) => {
   const value = Deno.env.get(name)
@@ -68,6 +69,24 @@ const mergeRawResponse = (
     }
   } catch (error) {
     throw error instanceof Error ? error : new Error('Unable to merge the Monobank callback payload.')
+  }
+}
+
+const isPaymentRecordExpired = (createdAt: unknown, now = Date.now()) => {
+  try {
+    if (typeof createdAt !== 'string' || !createdAt.trim()) {
+      return false
+    }
+
+    const createdTimestamp = Date.parse(createdAt)
+
+    if (Number.isNaN(createdTimestamp)) {
+      return false
+    }
+
+    return now - createdTimestamp >= WORKSPACE_PAYMENT_FINAL_TIMEOUT_MS
+  } catch (error) {
+    throw error instanceof Error ? error : new Error('Unable to evaluate payment expiration.')
   }
 }
 
@@ -150,7 +169,7 @@ Deno.serve(async (request) => {
 
     const { data: paymentRecord, error: paymentLookupError } = await adminClient
       .from('workspace_payments')
-      .select('id, status, raw_response')
+      .select('id, status, raw_response, created_at')
       .eq('provider_order_id', orderId)
       .maybeSingle()
 
@@ -198,6 +217,33 @@ Deno.serve(async (request) => {
       if (updatePaymentError) {
         throw updatePaymentError
       }
+
+      return jsonResponse({ response: 'accept' })
+    }
+
+    if (isPaymentRecordExpired(paymentRecord.created_at)) {
+      const { error: expirePaymentError } = await adminClient
+        .from('workspace_payments')
+        .update({
+          status: 'failed',
+          provider_payment_id: providerPaymentId,
+          raw_response: {
+            ...mergedRawResponse,
+            expiredReason: 'Paid callback arrived after the 3 minute confirmation window.',
+            expiredAt: new Date().toISOString()
+          }
+        })
+        .eq('id', paymentRecord.id)
+        .neq('status', 'paid')
+
+      if (expirePaymentError) {
+        throw expirePaymentError
+      }
+
+      logger.warn('Rejected a paid Monobank callback because it arrived after the confirmation window.', {
+        orderId,
+        createdAt: paymentRecord.created_at
+      })
 
       return jsonResponse({ response: 'accept' })
     }

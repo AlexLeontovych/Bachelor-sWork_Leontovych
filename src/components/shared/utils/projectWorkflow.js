@@ -69,6 +69,10 @@ export const getWorkflowTeamRole = (profile) => {
       profile?.team_role ||
       profile?.teamRole
 
+    if (teamRole === 'lead' || teamRole === 'team_lead' || teamRole === 'admin') {
+      return 'lead'
+    }
+
     return teamRole === 'qa' ? 'qa' : 'developer'
   } catch (error) {
     console.error('Error getting workflow team role:', error)
@@ -290,6 +294,10 @@ export const canManageProject = (project, profile) => {
     const workflowTeamRole = getWorkflowTeamRole(profile)
     const projectStatus = normalizeProjectStatus(project.status)
 
+    if (workflowTeamRole === 'lead') {
+      return true
+    }
+
     if (workflowTeamRole === 'developer') {
       return getProjectDeveloperId(project) === profile.id && projectStatus === 'development'
     }
@@ -418,11 +426,13 @@ export const canSendProjectToQa = (project, profile, options = {}) => {
       return false
     }
 
-    if (profile.role === 'admin') {
+    const workflowTeamRole = getWorkflowTeamRole(profile)
+
+    if (workflowTeamRole === 'lead') {
       return true
     }
 
-    return getWorkflowTeamRole(profile) === 'developer' && getProjectDeveloperId(project) === profile.id
+    return workflowTeamRole === 'developer' && getProjectDeveloperId(project) === profile.id
   } catch (error) {
     console.error('Error checking Send to QA access:', error)
     return false
@@ -450,11 +460,13 @@ export const canReturnProjectToDevelopment = (project, profile) => {
       return false
     }
 
-    if (profile.role === 'admin' || isSoloWorkspaceProfile(profile)) {
+    const workflowTeamRole = getWorkflowTeamRole(profile)
+
+    if (workflowTeamRole === 'lead' || isSoloWorkspaceProfile(profile)) {
       return true
     }
 
-    return getWorkflowTeamRole(profile) === 'qa' && getProjectQaId(project) === profile.id
+    return workflowTeamRole === 'qa' && getProjectQaId(project) === profile.id
   } catch (error) {
     console.error('Error checking Return to Development access:', error)
     return false
@@ -482,11 +494,13 @@ export const canApproveProjectToProduction = (project, profile) => {
       return false
     }
 
-    if (profile.role === 'admin' || isSoloWorkspaceProfile(profile)) {
+    const workflowTeamRole = getWorkflowTeamRole(profile)
+
+    if (workflowTeamRole === 'lead' || isSoloWorkspaceProfile(profile)) {
       return true
     }
 
-    return getWorkflowTeamRole(profile) === 'qa' && getProjectQaId(project) === profile.id
+    return workflowTeamRole === 'qa' && getProjectQaId(project) === profile.id
   } catch (error) {
     console.error('Error checking Approve to Production access:', error)
     return false
@@ -552,7 +566,7 @@ export const canArchiveProject = (project, profile) => {
  */
 export const canUnarchiveProject = (project, profile) => {
   try {
-    return Boolean(project && (profile?.role === 'admin' || isSoloWorkspaceProfile(profile)) && isProjectArchived(project))
+    return Boolean(project && (getWorkflowTeamRole(profile) === 'lead' || isSoloWorkspaceProfile(profile)) && isProjectArchived(project))
   } catch (error) {
     console.error('Error checking unarchive access:', error)
     return false

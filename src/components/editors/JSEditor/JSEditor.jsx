@@ -3,8 +3,8 @@ import Editor from '@monaco-editor/react'
 import { Play, Sparkles, X } from 'lucide-react'
 import './JSEditor.css'
 
-const JSEditor = ({ code, images, onCodeChange, onApply, onClose, sceneBackground = '#0b1226', screenFormat = 'landscape' }) => {
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('logic')
+const JSEditor = ({ code, images, onCodeChange, onApply, onClose, initialWorkspaceTab = 'logic' }) => {
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState(initialWorkspaceTab)
   const motionStats = useMemo(() => {
     const keyframeMatches = code.match(/\b(fromTo|to|from|set|stagger)\b/g) || []
     const triggerMatches = code.match(/\b(addEventListener|ScrollTrigger|IntersectionObserver|onComplete|onStart|onUpdate)\b/g) || []
@@ -31,8 +31,6 @@ const JSEditor = ({ code, images, onCodeChange, onApply, onClose, sceneBackgroun
         tone: ['blue', 'violet', 'gold', 'green'][index % 4]
       }))
   }, [images])
-
-  const previewLabel = screenFormat === 'portrait' ? 'Portrait scene' : 'Landscape scene'
 
   return (
     <div className="editor-modal-overlay" onClick={onClose}>
@@ -244,20 +242,6 @@ const JSEditor = ({ code, images, onCodeChange, onApply, onClose, sceneBackgroun
             </div>
 
             <aside className="motion-editor-sidebar">
-              <div className="motion-editor-preview-panel">
-                <span className="motion-editor-sidebar-label">Preview</span>
-
-                <div
-                  className="motion-editor-preview-card"
-                  style={{
-                    background: `linear-gradient(135deg, ${sceneBackground}, rgba(108, 76, 201, 0.92) 58%, rgba(108, 158, 255, 0.82))`
-                  }}
-                >
-                  <span>{previewLabel}</span>
-                  <strong>{motionLayers[0]?.name || 'Scene preview'}</strong>
-                </div>
-              </div>
-
               <div className="motion-editor-stat-list">
                 <div className="motion-editor-stat-card">
                   <span>Keyframes</span>

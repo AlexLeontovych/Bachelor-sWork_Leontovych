@@ -47,11 +47,20 @@ begin
     );
   end loop;
 
-  perform public.insert_project_notification(
+  insert into public.project_notifications (
+    workspace_id,
+    project_id,
+    recipient_user_id,
+    actor_user_id,
+    type,
+    title,
+    body
+  )
+  values (
     new.workspace_id,
     null,
     new.user_id,
-    workspace_owner_id,
+    nullif(workspace_owner_id, new.user_id),
     'workspace_welcome',
     format('Welcome to %s', workspace_name),
     format('Welcome aboard, %s! You joined %s as %s.', joined_member_name, workspace_name, joined_member_role)

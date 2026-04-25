@@ -16,6 +16,7 @@ import { getWorkspacePlanOptions } from './workspacePlans'
 import {
   getWorkspacePaymentConfirmationRemainingSeconds,
   isWorkspacePaymentConfirmationDelayed,
+  isWorkspacePaymentConfirmationExpired,
   isWorkspacePaymentFailureStatus
 } from './workspaceAccess'
 import Logo from '../../components/shared/ui/Logo'
@@ -26,7 +27,8 @@ import type {
   WorkspaceJoinCredentialsSummary,
   WorkspaceMember,
   WorkspacePayment,
-  WorkspacePlanType
+  WorkspacePlanType,
+  WorkspaceWorkflowRole
 } from './types'
 import './WorkspaceOnboardingView.css'
 
@@ -42,6 +44,7 @@ interface WorkspaceOnboardingViewProps {
   workspaceJoinSecret: WorkspaceJoinCredentialsSecret | null
   selectedPlanType: WorkspacePlanType
   isStartingCheckout: boolean
+  isStartingTestPayment: boolean
   isRefreshingPayment: boolean
   isFinalizingActivation: boolean
   isReturningToLogin: boolean
@@ -49,15 +52,17 @@ interface WorkspaceOnboardingViewProps {
   onPlanChange: (planType: WorkspacePlanType) => void
   onJoinWorkspace: (input: { workspaceLogin: string; workspacePassword: string }) => Promise<unknown>
   onStartCheckout: (planType: WorkspacePlanType) => Promise<void>
+  onStartTestPayment: (planType: WorkspacePlanType) => Promise<void>
   onReturnToLogin: () => Promise<void>
   onContinueToWorkspace: () => void
   onOpenWorkspaceAccess: () => void
-  onCreateInvite: (email: string, workflowRole: 'developer' | 'qa') => Promise<void>
+  onCreateInvite: (email: string, workflowRole: Exclude<WorkspaceWorkflowRole, null>) => Promise<void>
   onRotateWorkspaceCredentials: () => Promise<WorkspaceJoinCredentialsSecret>
   onRevokeInvite: (inviteId: string) => Promise<void>
 }
 
 type WorkspaceStepState = 'complete' | 'current' | 'upcoming'
+type AssignableWorkspaceWorkflowRole = Exclude<WorkspaceWorkflowRole, null>
 
 interface WorkspaceShellProps {
   currentStep: 'activate' | 'projects'
@@ -111,6 +116,18 @@ const PLAN_PRESENTATION: Record<WorkspacePlanType, PlanPresentation> = {
       'Shared access credentials should be rotated carefully'
     ]
   }
+}
+
+const getWorkspaceWorkflowRoleLabel = (workflowRole?: WorkspaceWorkflowRole) => {
+  if (workflowRole === 'lead') {
+    return 'Lead'
+  }
+
+  if (workflowRole === 'qa') {
+    return 'QA'
+  }
+
+  return 'Developer'
 }
 
 const resolveStepStates = (
@@ -259,6 +276,7 @@ const WorkspaceOnboardingView = ({
   workspaceJoinSecret,
   selectedPlanType,
   isStartingCheckout,
+  isStartingTestPayment,
   isRefreshingPayment,
   isFinalizingActivation,
   isReturningToLogin,
@@ -266,6 +284,7 @@ const WorkspaceOnboardingView = ({
   onPlanChange,
   onJoinWorkspace,
   onStartCheckout,
+  onStartTestPayment,
   onReturnToLogin,
   onContinueToWorkspace,
   onOpenWorkspaceAccess,
@@ -274,7 +293,7 @@ const WorkspaceOnboardingView = ({
   onRevokeInvite
 }: WorkspaceOnboardingViewProps) => {
   const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<'developer' | 'qa'>('developer')
+  const [inviteRole, setInviteRole] = useState<AssignableWorkspaceWorkflowRole>('developer')
   const [inviteError, setInviteError] = useState('')
   const [inviteSuccess, setInviteSuccess] = useState('')
   const [isSubmittingInvite, setIsSubmittingInvite] = useState(false)
@@ -301,10 +320,20 @@ const WorkspaceOnboardingView = ({
   const effectivePendingPaymentStartedAt = pendingPayment?.createdAt
     ? new Date(pendingPayment.createdAt).getTime()
     : pendingPaymentStartedAt
+  const hasPaymentExpiredState = Boolean(
+    (pendingPayment || pendingOrderId) &&
+      !hasPaymentFailureState &&
+      !isFinalizingActivation &&
+      isWorkspacePaymentConfirmationExpired({
+        startedAt: effectivePendingPaymentStartedAt,
+        now: paymentClockNow
+      })
+  )
   const hasPendingPaymentState = Boolean(pendingPayment || pendingOrderId || isFinalizingActivation)
   const hasPaymentTimeoutState = Boolean(
     (pendingPayment || pendingOrderId) &&
       !hasPaymentFailureState &&
+      !hasPaymentExpiredState &&
       !isFinalizingActivation &&
       isWorkspacePaymentConfirmationDelayed({
         startedAt: effectivePendingPaymentStartedAt,
@@ -335,16 +364,26 @@ const WorkspaceOnboardingView = ({
   const paymentDescription = isFinalizingActivation
     ? 'We are finalizing billing, access, and onboarding permissions now. Your workspace screen will open automatically in a moment.'
     : 'Your payment is being confirmed with our provider. The workspace will open automatically once the transaction settles.'
-  const paymentFailureKicker = pendingPayment?.status === 'cancelled' ? 'Payment cancelled' : 'Payment failed'
-  const paymentFailureHeadline = pendingPayment?.status === 'cancelled'
+  const paymentFailureKicker = hasPaymentExpiredState
+    ? 'Payment timeout'
+    : pendingPayment?.status === 'cancelled'
+      ? 'Payment cancelled'
+      : 'Payment failed'
+  const paymentFailureHeadline = hasPaymentExpiredState
+    ? 'Payment was not completed.'
+    : pendingPayment?.status === 'cancelled'
     ? 'The checkout was cancelled.'
     : 'We could not confirm the payment.'
-  const paymentFailureDescription = pendingPayment?.status === 'cancelled'
+  const paymentFailureDescription = hasPaymentExpiredState
+    ? 'The provider did not confirm this transaction within 3 minutes. Your workspace remains inactive until a new payment succeeds.'
+    : pendingPayment?.status === 'cancelled'
     ? 'The provider window was closed before the transaction was confirmed. Your workspace was not activated.'
     : 'The provider returned an unsuccessful payment result. Your workspace remains inactive until a new payment succeeds.'
   const paymentFailureBanner =
     paymentError ||
-    (pendingPayment?.status === 'cancelled'
+    (hasPaymentExpiredState
+      ? 'No payment confirmation arrived within 3 minutes. Please restart checkout and complete a new payment.'
+      : pendingPayment?.status === 'cancelled'
       ? 'No charge was finalized. You can restart checkout safely.'
       : 'Try the payment again or verify your card details in the provider flow.')
   const paymentTimeoutBanner =
@@ -393,6 +432,15 @@ const WorkspaceOnboardingView = ({
     try {
       onPlanChange(planType)
       await onStartCheckout(planType)
+    } catch (error) {
+      // Parent component already exposes the error state.
+    }
+  }
+
+  const handlePlanTestPayment = async (planType: WorkspacePlanType) => {
+    try {
+      onPlanChange(planType)
+      await onStartTestPayment(planType)
     } catch (error) {
       // Parent component already exposes the error state.
     }
@@ -563,7 +611,7 @@ const WorkspaceOnboardingView = ({
                       <div className="workspace-stack-meta">{member.email || 'No email available'}</div>
                     </div>
                     <span className={`workspace-pill workspace-pill-role-${member.membershipRole}`}>
-                      {member.membershipRole === 'owner' ? 'Owner' : member.workflowRole === 'qa' ? 'QA' : 'Developer'}
+                      {member.membershipRole === 'owner' ? 'Owner' : getWorkspaceWorkflowRoleLabel(member.workflowRole)}
                     </span>
                   </div>
                 ))}
@@ -596,7 +644,7 @@ const WorkspaceOnboardingView = ({
 
                 <p className="workspace-surface-copy">
                   Registered teammates can join this corporate workspace with the shared login and password below.
-                  Keep QA onboarding on email invites when you need a dedicated QA role.
+                  Review join requests when you need to assign Lead, QA, or Developer access.
                 </p>
 
                 <div className="workspace-credential-grid">
@@ -671,9 +719,10 @@ const WorkspaceOnboardingView = ({
                   <select
                     id="workspaceInviteRole"
                     value={inviteRole}
-                    onChange={(event) => setInviteRole(event.target.value as 'developer' | 'qa')}
+                    onChange={(event) => setInviteRole(event.target.value as AssignableWorkspaceWorkflowRole)}
                     disabled={isSubmittingInvite}
                   >
+                    <option value="lead">Lead</option>
                     <option value="developer">Developer</option>
                     <option value="qa">QA</option>
                   </select>
@@ -705,7 +754,7 @@ const WorkspaceOnboardingView = ({
                         <div>
                           <div className="workspace-stack-title">{invite.email}</div>
                           <div className="workspace-stack-meta">
-                            {invite.workflowRole === 'qa' ? 'QA access' : 'Developer access'}
+                            {getWorkspaceWorkflowRoleLabel(invite.workflowRole)} access
                           </div>
                         </div>
                         <button
@@ -755,7 +804,7 @@ const WorkspaceOnboardingView = ({
     )
   }
 
-  if (hasPaymentFailureState && pendingPayment) {
+  if ((hasPaymentFailureState || hasPaymentExpiredState) && pendingPayment) {
     return (
       <WorkspaceShell
         currentStep="activate"
@@ -794,9 +843,9 @@ const WorkspaceOnboardingView = ({
             <article className="workspace-payment-meta-card">
               <span className="workspace-payment-meta-label">Status</span>
               <strong className="workspace-payment-status-badge workspace-payment-status-badge-error">
-                {paymentStatusLabel}
+                {hasPaymentExpiredState ? 'Timed out' : paymentStatusLabel}
               </strong>
-              <small>Activation was stopped before completion</small>
+              <small>{hasPaymentExpiredState ? '3 minute payment window elapsed' : 'Activation was stopped before completion'}</small>
             </article>
           </div>
 
@@ -1042,6 +1091,17 @@ const WorkspaceOnboardingView = ({
                   <CreditCard size={15} />
                   {isStartingCheckout && isSelected ? 'Preparing checkout...' : `Activate ${amountDisplay} ${plan.currency}`}
                   {!isStartingCheckout && <ArrowRight size={15} />}
+                </button>
+                <button
+                  type="button"
+                  className="workspace-test-payment-button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void handlePlanTestPayment(plan.type)
+                  }}
+                  disabled={isStartingCheckout || isStartingTestPayment}
+                >
+                  {isStartingTestPayment && isSelected ? 'Activating test...' : 'Test payment'}
                 </button>
               </div>
             </article>

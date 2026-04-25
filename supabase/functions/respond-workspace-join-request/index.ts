@@ -9,7 +9,7 @@ const logger = createLogger('respond-workspace-join-request')
 const requestSchema = z.object({
   requestId: z.string().uuid(),
   action: z.enum(['accept', 'decline']),
-  workflowRole: z.enum(['developer', 'qa']).optional()
+  workflowRole: z.enum(['developer', 'qa', 'lead']).optional()
 })
 
 Deno.serve(async (request) => {

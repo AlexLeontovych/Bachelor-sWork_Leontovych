@@ -28,6 +28,12 @@ const leadProfile = {
   team_role: 'lead'
 }
 
+const workflowLeadProfile = {
+  id: 'workflow-lead-1',
+  role: 'user',
+  team_role: 'lead'
+}
+
 const workspaceOwnerProfile = {
   id: 'workspace-owner-1',
   role: 'user',
@@ -120,9 +126,21 @@ describe('projectWorkflow', () => {
   it('allows developers and team leads to create projects', () => {
     expect(canCreateProjects(developerProfile)).toBe(true)
     expect(canCreateProjects(leadProfile)).toBe(true)
+    expect(canCreateProjects(workflowLeadProfile)).toBe(true)
     expect(canCreateProjects(workspaceOwnerProfile)).toBe(true)
     expect(canCreateProjects(soloWorkspaceProfile)).toBe(true)
     expect(canCreateProjects(qaProfile)).toBe(false)
+  })
+
+  it('allows workflow team leads to manage project assignments and workflow', () => {
+    const project = {
+      status: 'development',
+      developer_id: developerProfile.id,
+      qa_id: qaProfile.id
+    }
+
+    expect(canManageProject(project, workflowLeadProfile)).toBe(true)
+    expect(canSendProjectToQa(project, workflowLeadProfile, { isSaved: true })).toBe(true)
   })
 
   it('treats archived projects as read-only for regular users', () => {

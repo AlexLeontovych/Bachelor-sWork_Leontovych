@@ -526,6 +526,8 @@
 .workspace-plan-cta {
   margin-top: auto;
   padding-top: 22px;
+  display: grid;
+  gap: 10px;
 }
 
 .workspace-plan-button {
@@ -538,6 +540,32 @@
 
 .workspace-plan-button-selected {
   box-shadow: 0 18px 34px rgba(114, 153, 243, 0.34);
+}
+
+.workspace-test-payment-button {
+  width: 100%;
+  min-height: 42px;
+  border: 1px dashed rgba(167, 139, 250, 0.42);
+  border-radius: 12px;
+  background: rgba(167, 139, 250, 0.1);
+  color: #e7ddff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-test-payment-button:hover:not(:disabled),
+.workspace-test-payment-button:focus-visible {
+  border-color: rgba(167, 139, 250, 0.66);
+  background: rgba(167, 139, 250, 0.16);
+  color: #ffffff;
+  outline: none;
+}
+
+.workspace-test-payment-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .workspace-checkout-bar {

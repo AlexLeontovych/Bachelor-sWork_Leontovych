@@ -7,7 +7,7 @@ import './WorkspaceInviteModal.css'
 type WorkspaceInviteModalData = {
   workspaceId: string
   workspaceName: string
-  workflowRole: 'developer' | 'qa' | 'member'
+  workflowRole: 'developer' | 'qa' | 'lead' | 'member'
   workflowRoleLabel: string
   invitedByName: string | null
   invitedByEmail: string | null

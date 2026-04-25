@@ -61,6 +61,116 @@
   color: transparent;
 }
 
+.ui-site-footer {
+  position: relative;
+  width: min(980px, calc(100% - 40px));
+  margin: 28px auto 0;
+  padding: 1px;
+  overflow: hidden;
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(120, 151, 255, 0.22), rgba(167, 139, 250, 0.16)),
+    rgba(15, 23, 42, 0.82);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.ui-site-footer__glow {
+  position: absolute;
+  inset: -80% 18% auto;
+  height: 110px;
+  background: radial-gradient(circle, rgba(120, 151, 255, 0.3), transparent 68%);
+  pointer-events: none;
+}
+
+.ui-site-footer__content {
+  position: relative;
+  z-index: 1;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-radius: 21px;
+  padding: 12px 16px 12px 18px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(120, 151, 255, 0.14), transparent 28%),
+    linear-gradient(180deg, rgba(11, 18, 31, 0.94), rgba(7, 12, 22, 0.96));
+  backdrop-filter: blur(18px);
+}
+
+.ui-site-footer__credit {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.ui-site-footer__credit strong {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.ui-site-footer__links {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.ui-site-footer__link {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 13px;
+  padding: 0 12px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.12), transparent 34%),
+    rgba(255, 255, 255, 0.04);
+  color: #dbe5ff;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.ui-site-footer__link:hover,
+.ui-site-footer__link:focus-visible {
+  border-color: rgba(120, 151, 255, 0.42);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 34%),
+    rgba(120, 151, 255, 0.12);
+  color: #f8fbff;
+  transform: translateY(-1px);
+  outline: none;
+  box-shadow: 0 12px 28px rgba(86, 118, 245, 0.18);
+}
+
+.ui-site-footer__link svg {
+  color: #a7baff;
+}
+
+@media (max-width: 680px) {
+  .ui-site-footer__content {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .ui-site-footer__links {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}
+
 .grid-pattern {
   background-image:
     linear-gradient(rgba(247, 244, 237, 0.06) 1px, transparent 1px),
@@ -928,7 +1038,7 @@
 
 .ui-page-header__workspace-settings-button:hover svg,
 .ui-page-header__workspace-settings-button:focus-visible svg {
-  transform: rotate(180deg);
+  transform: scale(1.06);
 }
 
 .ui-page-header__workspace-settings-button--join {
@@ -952,6 +1062,34 @@
   box-shadow:
     0 0 0 1px rgba(167, 139, 250, 0.18),
     0 18px 38px rgba(124, 92, 255, 0.28);
+}
+
+.ui-page-header__workspace-settings-button--create {
+  border-color: rgba(96, 165, 250, 0.34);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(96, 165, 250, 0.18), rgba(124, 92, 255, 0.14));
+  color: #dbeafe;
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.12),
+    0 14px 30px rgba(59, 130, 246, 0.18);
+}
+
+.ui-page-header__workspace-settings-button--create:hover,
+.ui-page-header__workspace-settings-button--create:focus-visible {
+  border-color: rgba(96, 165, 250, 0.52);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.2), transparent 34%),
+    linear-gradient(135deg, rgba(96, 165, 250, 0.24), rgba(124, 92, 255, 0.2));
+  color: #f4f8ff;
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.2),
+    0 18px 38px rgba(59, 130, 246, 0.26);
+}
+
+.ui-page-header__workspace-settings-button--create:hover svg,
+.ui-page-header__workspace-settings-button--create:focus-visible svg {
+  transform: scale(1.08);
 }
 
 .ui-page-header__join-workspace-button {
